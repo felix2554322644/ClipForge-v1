@@ -1,0 +1,6 @@
+{
+  "name": "Lean AI Video Generator",
+  "description": "Autonomous vertical short-form video generation pipeline powered by Gemini, Pexels, Piper TTS, and FFmpeg.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
