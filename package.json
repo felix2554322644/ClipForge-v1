@@ -10,6 +10,7 @@
     "generate": "tsx scripts/cli.ts",
     "test": "tsx --test tests/contracts.test.ts tests/reframing.test.ts tests/broll-scoring.test.ts tests/timeline.test.ts tests/e2e-render.test.ts",
     "test:contracts": "tsx --test tests/contracts.test.ts",
+    "verify:piper": "tsx scripts/verify-piper.ts",
     "clean": "rm -rf dist artifacts cache",
     "lint": "tsc --noEmit"
   },

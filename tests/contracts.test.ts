@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import fs from 'fs';
+import { spawnSync } from 'child_process';
 import { VIDEO_PROFILES, loadConfig, verifyDependencies } from '../src/config';
+import { verifyPiperEnvironment } from '../scripts/verify-piper';
 
 describe('Contracts & Configuration', () => {
   it('should have standard vertical profiles defined with 9:16 aspect ratio', () => {
@@ -39,5 +42,31 @@ describe('Contracts & Configuration', () => {
     assert.strictEqual(result.node.ok, true);
     assert.strictEqual(result.ffmpeg.ok, true);
     assert.strictEqual(result.ffprobe.ok, true);
+  });
+
+  it('should verify Piper runtime executable and voice model readiness', () => {
+    const config = loadConfig();
+    assert.ok(fs.existsSync(config.piperBin), `Piper binary not found at ${config.piperBin}`);
+    
+    // Verify executable
+    const proc = spawnSync(config.piperBin, ['--version'], { stdio: 'pipe' });
+    assert.strictEqual(proc.status, 0, `Piper binary failed to execute: ${proc.stderr?.toString()}`);
+
+    // Verify model readability and non-empty size
+    assert.ok(fs.existsSync(config.piperModel), `Voice model not found at ${config.piperModel}`);
+    fs.accessSync(config.piperModel, fs.constants.R_OK);
+    const stat = fs.statSync(config.piperModel);
+    assert.ok(stat.size > 10 * 1024 * 1024, `Voice model size (${stat.size} bytes) is suspiciously small`);
+
+    // Verify companion JSON
+    const jsonPath = `${config.piperModel}.json`;
+    assert.ok(fs.existsSync(jsonPath), `Companion voice model JSON not found at ${jsonPath}`);
+  });
+
+  it('should pass full pre-flight Piper environment verification and micro-synthesis', () => {
+    const result = verifyPiperEnvironment();
+    assert.strictEqual(result.ok, true, `Piper verification failed: ${result.error}`);
+    assert.ok(result.piperVersion);
+    assert.ok((result.testAudioDurationSec || 0) > 0);
   });
 });

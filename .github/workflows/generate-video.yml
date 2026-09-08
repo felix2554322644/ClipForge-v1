@@ -46,21 +46,39 @@ jobs:
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
 
-      - name: Install Piper Local TTS Engine & Voice Model
+      - name: Cache Piper TTS Runtime & Voice Model
+        id: cache-piper
+        uses: actions/cache@v4
+        with:
+          path: |
+            bin/piper
+            models
+          key: piper-${{ runner.os }}-${{ runner.arch }}-2023.11.14-2-lessac-v1
+          restore-keys: |
+            piper-${{ runner.os }}-${{ runner.arch }}-2023.11.14-2-
+
+      - name: Install or Restore Piper Local TTS & Voice Model
         run: |
           bash scripts/setup-piper.sh
 
       - name: Install Project Dependencies
         run: npm ci
 
+      - name: Verify Piper Local TTS Runtime & Voice Model Integrity
+        env:
+          PIPER_BIN: ./bin/piper/piper
+          PIPER_MODEL: ./models/en_US-lessac-medium.onnx
+          FFPROBE_BIN: ffprobe
+        run: |
+          npm run verify:piper
+
       - name: Verify Environment & Pipeline Dependencies
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIPER_BIN: ./bin/piper/piper
+          PIPER_MODEL: ./models/en_US-lessac-medium.onnx
         run: |
-          echo "Verifying binaries and models..."
-          ./bin/piper/piper --version
-          ls -lh models/en_US-lessac-medium.onnx
           npm run test:contracts
 
       - name: Execute End-to-End Video Generation Pipeline
@@ -71,6 +89,7 @@ jobs:
           PIPER_MODEL: ./models/en_US-lessac-medium.onnx
           FFMPEG_BIN: ffmpeg
           FFPROBE_BIN: ffprobe
+          ALLOW_FALLBACKS: 'false'
         run: |
           npm run generate -- --topic "${{ github.event.inputs.topic }}" --duration "${{ github.event.inputs.duration }}" --profile "${{ github.event.inputs.profile }}"
 

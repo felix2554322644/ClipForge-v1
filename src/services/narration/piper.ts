@@ -26,34 +26,42 @@ export class PiperNarrationEngine {
 
     const audioOutputPath = path.join(outputDir, 'narration.wav');
 
-    const piperInstalled = fs.existsSync(this.config.piperBin) || this.canExecute(this.config.piperBin);
-    const modelExists = fs.existsSync(this.config.piperModel);
+    const isStrictExecution =
+      process.env.GITHUB_ACTIONS === 'true' ||
+      process.env.CI === 'true' ||
+      this.config.allowFallbacks === false ||
+      allowFallback === false;
+
+    const piperInstalled = this.canExecute(this.config.piperBin);
+    const modelReadable = this.isModelReadable(this.config.piperModel);
 
     let engineUsed: 'piper' | 'fallback_sine' | 'fallback_gemini' = 'piper';
 
-    if (piperInstalled && modelExists) {
+    if (piperInstalled && modelReadable) {
       try {
         this.logger.stageProgress('narration', `Executing Piper local TTS: ${this.config.piperBin} with model ${path.basename(this.config.piperModel)}`);
         this.synthesizeWithPiper(script.fullText, audioOutputPath);
         engineUsed = 'piper';
       } catch (err: any) {
         this.logger.stageError('narration', err);
-        if (!allowFallback && !this.config.allowFallbacks) {
-          throw new Error(`Piper synthesis failed: ${err.message || err}`);
+        if (isStrictExecution) {
+          throw new Error(
+            `CRITICAL: Piper speech synthesis failed in GitHub Actions / production: ${err.message || err}. Faking narration during real generation is strictly forbidden.`
+          );
         }
         this.logger.warn('narration', 'Piper failed; switching to development audio fallback.');
         this.synthesizeWithFallback(script, audioOutputPath);
         engineUsed = 'fallback_sine';
       }
     } else {
-      if (!allowFallback && !this.config.allowFallbacks) {
+      if (isStrictExecution) {
         throw new Error(
-          `Piper TTS is not available. Binary: "${this.config.piperBin}" (exists: ${piperInstalled}), Model: "${this.config.piperModel}" (exists: ${modelExists}). Run scripts/setup-piper.sh to install.`
+          `CRITICAL: Piper TTS cannot be initialized in GitHub Actions / production. Binary: "${this.config.piperBin}" (executable: ${piperInstalled}), Model: "${this.config.piperModel}" (readable: ${modelReadable}). Faking narration during real generation is strictly forbidden. Run "bash scripts/setup-piper.sh" or "npm run verify:piper".`
         );
       }
       this.logger.warn(
         'narration',
-        `Piper TTS not configured (bin: ${piperInstalled}, model: ${modelExists}). Using audio synthesizer fallback.`
+        `Piper TTS not configured (bin: ${piperInstalled}, model: ${modelReadable}). Using audio synthesizer fallback.`
       );
       this.synthesizeWithFallback(script, audioOutputPath);
       engineUsed = 'fallback_sine';
@@ -142,6 +150,17 @@ export class PiperNarrationEngine {
     try {
       const res = spawnSync(cmd, ['--version'], { stdio: 'pipe' });
       return res.status === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private isModelReadable(modelPath: string): boolean {
+    try {
+      if (!fs.existsSync(modelPath)) return false;
+      fs.accessSync(modelPath, fs.constants.R_OK);
+      const stat = fs.statSync(modelPath);
+      return stat.size > 10 * 1024 * 1024; // Ensure non-trivial valid model size (>10MB)
     } catch {
       return false;
     }

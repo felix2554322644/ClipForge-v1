@@ -1,11 +1,11 @@
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { NarrationArtifact, NarrationSentenceTiming, ScriptArtifact } from '../../types/pipeline.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
-import { getGeminiClient } from '../geminiClient.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -23,40 +23,21 @@ export class NarrationService {
     await fs.mkdir(outputDir, { recursive: true });
     const audioFilePath = path.join(outputDir, 'narration.wav');
 
-    let ttsEngineUsed = 'fallback_synthesizer';
-
-    // 1. Try Piper local TTS if configured or available
-    const hasPiper = await this.checkPiperAvailable();
-    if (hasPiper) {
-      try {
-        logger.info(jobId, 'narration', `Using Piper local TTS (${config.piperPath || 'piper'})`);
-        await this.synthesizeWithPiper(script.fullNarrationText, audioFilePath);
-        ttsEngineUsed = 'piper_local';
-      } catch (err: any) {
-        logger.warn(jobId, 'narration', `Piper synthesis failed: ${err.message}. Trying next voice engine.`);
-      }
+    const piperCheck = await this.checkPiperAvailable();
+    if (!piperCheck.ok) {
+      throw new Error(
+        `CRITICAL: Piper local TTS is required for video generation. ${piperCheck.error}. Faking narration or replacing Piper with a cloud TTS service is forbidden.`
+      );
     }
 
-    // 2. If piper wasn't used or failed, try Gemini TTS if API key is present
-    if (ttsEngineUsed === 'fallback_synthesizer') {
-      const gemini = getGeminiClient();
-      if (gemini) {
-        try {
-          logger.info(jobId, 'narration', 'Using Gemini TTS model (gemini-3.1-flash-tts-preview)');
-          await this.synthesizeWithGemini(gemini, script.fullNarrationText, audioFilePath);
-          ttsEngineUsed = 'gemini_tts';
-        } catch (err: any) {
-          logger.warn(jobId, 'narration', `Gemini TTS failed: ${err.message}. Using local acoustic synthesizer.`);
-        }
-      }
+    try {
+      logger.info(jobId, 'narration', `Using Piper local TTS (${config.piperPath}) with model (${path.basename(config.piperModel)})`);
+      await this.synthesizeWithPiper(script.fullNarrationText, audioFilePath);
+    } catch (err: any) {
+      throw new Error(`CRITICAL: Piper synthesis failed: ${err.message || err}. Faking narration is strictly forbidden.`);
     }
 
-    // 3. If neither worked, use high-fidelity acoustic speech-cadence synthesizer via FFmpeg
-    if (ttsEngineUsed === 'fallback_synthesizer') {
-      logger.info(jobId, 'narration', 'Generating local speech audio track via FFmpeg formant synthesis');
-      await this.synthesizeLocalCadenceAudio(script, audioFilePath);
-      ttsEngineUsed = 'local_cadence_synthesizer';
-    }
+    const ttsEngineUsed = 'piper_local';
 
     // 4. Measure exact audio properties with ffprobe
     const probe = await this.probeAudio(audioFilePath);
@@ -98,18 +79,39 @@ export class NarrationService {
     return artifact;
   }
 
-  private async checkPiperAvailable(): Promise<boolean> {
-    const bin = config.piperPath || 'piper';
+  private async checkPiperAvailable(): Promise<{ ok: boolean; error?: string }> {
+    const bin = config.piperPath;
+    const model = config.piperModel;
+
+    // Check executable
     try {
-      await execFileAsync('which', [bin]);
-      return true;
-    } catch {
-      return false;
+      const { stdout, stderr } = await execFileAsync(bin, ['--version']);
+      if (!stdout && !stderr) {
+        return { ok: false, error: `Piper binary at ${bin} returned no version output` };
+      }
+    } catch (err: any) {
+      return { ok: false, error: `Piper binary at ${bin} cannot be executed (${err.message || err})` };
     }
+
+    // Check model
+    try {
+      if (!fsSync.existsSync(model)) {
+        return { ok: false, error: `Piper voice model not found at ${model}` };
+      }
+      fsSync.accessSync(model, fsSync.constants.R_OK);
+      const stat = fsSync.statSync(model);
+      if (stat.size < 10 * 1024 * 1024) {
+        return { ok: false, error: `Piper voice model file is too small or corrupted (${stat.size} bytes)` };
+      }
+    } catch (err: any) {
+      return { ok: false, error: `Piper voice model at ${model} is not readable (${err.message || err})` };
+    }
+
+    return { ok: true };
   }
 
   private async synthesizeWithPiper(text: string, outputPath: string): Promise<void> {
-    const bin = config.piperPath || 'piper';
+    const bin = config.piperPath;
     const args: string[] = ['--output_file', outputPath];
     if (config.piperModel) {
       args.push('--model', config.piperModel);
@@ -123,79 +125,14 @@ export class NarrationService {
 
     await new Promise<void>((resolve, reject) => {
       child.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`Piper exited with code ${code}`));
+        if (code === 0 && fsSync.existsSync(outputPath) && fsSync.statSync(outputPath).size > 100) {
+          resolve();
+        } else {
+          reject(new Error(`Piper exited with code ${code} or failed to generate non-empty audio`));
+        }
       });
       child.on('error', reject);
     });
-  }
-
-  private async synthesizeWithGemini(gemini: any, text: string, outputPath: string): Promise<void> {
-    const response = await gemini.models.generateContent({
-      model: 'gemini-3.1-flash-tts-preview',
-      contents: [{ parts: [{ text: `Speak in a clear, authoritative, engaging documentary voice: ${text}` }] }],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Charon' },
-          },
-        },
-      },
-    });
-
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!base64Audio) {
-      throw new Error('Gemini TTS did not return audio data');
-    }
-
-    const rawBuffer = Buffer.from(base64Audio, 'base64');
-    const tempPcmPath = `${outputPath}.pcm`;
-    await fs.writeFile(tempPcmPath, rawBuffer);
-
-    // Convert raw PCM 24kHz to standard 44.1kHz WAV
-    try {
-      await execFileAsync(config.ffmpegPath, [
-        '-y',
-        '-f', 's16le',
-        '-ar', '24000',
-        '-ac', '1',
-        '-i', tempPcmPath,
-        '-ar', '44100',
-        '-ac', '2',
-        outputPath,
-      ]);
-    } finally {
-      await fs.unlink(tempPcmPath).catch(() => {});
-    }
-  }
-
-  /**
-   * Generates a clean, rhythmic speech-cadence narration audio track using FFmpeg.
-   * Useful in environments where Piper or Gemini are offline or during unit/e2e testing.
-   */
-  public async synthesizeLocalCadenceAudio(script: ScriptArtifact, outputPath: string): Promise<void> {
-    const totalDuration = script.estimatedTotalDurationSec || 18;
-    // Generate an ambient harmonic drone with human voice fundamentals (~130Hz - 260Hz) modulated to sentence rhythm
-    const filterComplex = `
-      sine=frequency=150:duration=${totalDuration}[b1];
-      sine=frequency=240:duration=${totalDuration}[b2];
-      sine=frequency=360:duration=${totalDuration}[b3];
-      [b1][b2]amix=inputs=2:weights=0.6 0.4[m1];
-      [m1][b3]amix=inputs=2:weights=0.7 0.3[mix];
-      [mix]lowpass=f=1200,highpass=f=100,volume=0.45[voice]
-    `.replace(/\s+/g, ' ').trim();
-
-    await execFileAsync(config.ffmpegPath, [
-      '-y',
-      '-f', 'lavfi',
-      '-i', `anullsrc=r=44100:cl=stereo:d=${totalDuration}`,
-      '-filter_complex', filterComplex,
-      '-map', '[voice]',
-      '-c:a', 'pcm_s16le',
-      '-ar', '44100',
-      outputPath,
-    ]);
   }
 
   public async probeAudio(audioPath: string): Promise<{ durationSec: number; sampleRate: number; channels: number; format: string }> {

@@ -1,8 +1,8 @@
 {
   "jobId": "test_e2e_job",
-  "renderStartedAt": "2026-09-08T13:07:39.006Z",
-  "renderCompletedAt": "2026-09-08T13:07:44.564Z",
-  "renderDurationSec": 5.56,
+  "renderStartedAt": "2026-09-08T13:21:40.125Z",
+  "renderCompletedAt": "2026-09-08T13:21:45.789Z",
+  "renderDurationSec": 5.66,
   "profile": "vertical-1080",
   "resolution": {
     "width": 1080,
