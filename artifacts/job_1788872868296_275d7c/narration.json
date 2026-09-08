@@ -1,0 +1,42 @@
+{
+  "text": "Did you know that How black holes destroy stars might be one of the most violent spectacles in the entire universe? As matter is drawn past the point of no return, gravitational friction heats surrounding gas to millions of degrees. Tidal forces stretch entire stars into incandescent ribbons of plasma, before consuming them entirely. What remains are radiant shockwaves that illuminate the dark cosmos for billions of light years.",
+  "audioPath": "/app/applet/artifacts/job_1788872868296_275d7c/narration.wav",
+  "audioDurationSec": 24.67,
+  "sampleRate": 22050,
+  "channels": 1,
+  "voiceConfig": {
+    "engine": "piper",
+    "modelPath": "/app/applet/models/en_US-lessac-medium.onnx",
+    "voiceName": "en_US-lessac-medium"
+  },
+  "lineTimings": [
+    {
+      "index": 1,
+      "text": "Did you know that How black holes destroy stars might be one of the most violent spectacles in the entire universe?",
+      "startTimeSec": 0,
+      "durationSec": 7.508
+    },
+    {
+      "index": 2,
+      "text": "As matter is drawn past the point of no return, gravitational friction heats surrounding gas to millions of degrees.",
+      "startTimeSec": 7.508,
+      "durationSec": 6.793
+    },
+    {
+      "index": 3,
+      "text": "Tidal forces stretch entire stars into incandescent ribbons of plasma, before consuming them entirely.",
+      "startTimeSec": 14.301,
+      "durationSec": 5.006
+    },
+    {
+      "index": 4,
+      "text": "What remains are radiant shockwaves that illuminate the dark cosmos for billions of light years.",
+      "startTimeSec": 19.307,
+      "durationSec": 5.363
+    }
+  ],
+  "measuredWith": "ffprobe",
+  "metadata": {
+    "generatedAt": "2026-09-08T13:09:15.668Z"
+  }
+}

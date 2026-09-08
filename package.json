@@ -1,16 +1,16 @@
 {
-  "name": "react-example",
+  "name": "github-native-ai-video-generator-v1",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "generate": "tsx scripts/cli.ts",
-    "test": "tsx --test tests/**/*.test.ts",
-    "test:pipeline": "tsx scripts/test-pipeline.ts",
-    "clean": "rm -rf dist server.js output cache jobs",
+    "test": "tsx --test tests/contracts.test.ts tests/reframing.test.ts tests/broll-scoring.test.ts tests/timeline.test.ts tests/e2e-render.test.ts",
+    "test:contracts": "tsx --test tests/contracts.test.ts",
+    "clean": "rm -rf dist artifacts cache",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

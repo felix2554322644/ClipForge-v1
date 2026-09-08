@@ -1,144 +1,159 @@
-import test from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { TimelineBuilder } from '../src/server/services/TimelineBuilder.js';
+import { TimelineBuilder } from '../src/services/timeline/builder';
+import { PipelineLogger } from '../src/services/logging/logger';
 import {
+  BrollSelectionArtifact,
   NarrationArtifact,
   ScenePlanArtifact,
-  BrollSelectionArtifact,
-} from '../src/types/pipeline.js';
+} from '../src/contracts/artifacts';
 
-test('TimelineBuilder synchronizes visual cuts to exact audio duration', () => {
-  const builder = new TimelineBuilder();
+describe('Timeline Synchronization & Master Audio Clock', () => {
+  const logger = new PipelineLogger('test_job');
+  const builder = new TimelineBuilder(logger);
 
-  const narration: NarrationArtifact = {
-    audioFilePath: '/tmp/narration.wav',
-    durationSec: 15.0, // Actual measured audio duration
-    sampleRate: 44100,
-    channels: 2,
-    format: 'pcm_s16le',
-    ttsEngineUsed: 'test_engine',
-    sentenceTimings: [
-      { text: 'Hook line', startSec: 0, endSec: 5.0 },
-      { text: 'Second line', startSec: 5.0, endSec: 10.0 },
-      { text: 'Final line', startSec: 10.0, endSec: 15.0 },
+  const mockNarration: NarrationArtifact = {
+    text: 'A star approaches the event horizon. Gravity tears it to pieces. Radiant energy blasts through the cosmos.',
+    audioPath: '/tmp/test_audio.wav',
+    audioDurationSec: 16.425, // Master clock anchor
+    sampleRate: 22050,
+    channels: 1,
+    voiceConfig: { engine: 'piper', voiceName: 'en_US-lessac' },
+    lineTimings: [
+      { index: 1, text: 'A star approaches the event horizon.', startTimeSec: 0, durationSec: 5.2 },
+      { index: 2, text: 'Gravity tears it to pieces.', startTimeSec: 5.2, durationSec: 5.5 },
+      { index: 3, text: 'Radiant energy blasts through the cosmos.', startTimeSec: 10.7, durationSec: 5.725 },
     ],
-    generatedAt: new Date().toISOString(),
+    measuredWith: 'ffprobe',
+    metadata: { generatedAt: new Date().toISOString() },
   };
 
-  const scenePlan: ScenePlanArtifact = {
+  const mockScenePlan: ScenePlanArtifact = {
     scenes: [
       {
         sceneId: 'scene_1',
-        narrationText: 'Hook line',
-        estimatedDurationSec: 3.0,
-        visualObjective: 'Hook',
-        visualDescription: 'Desc 1',
-        searchQueries: ['query 1'],
-        preferredBrollType: 'cinematic',
-        importance: 'high',
-        editingGuidance: { cameraMotion: 'slow_zoom_in', cutPacing: 'moderate', transition: 'cut' },
+        narrationSegment: 'A star approaches the event horizon.',
+        targetDurationSec: 5.2,
+        visualObjective: 'Scale and approach',
+        visualDescription: 'Star drifting towards dark void',
+        pexelsSearchQueries: ['star space'],
+        visualPriority: 'high',
+        suggestedMotion: 'zoom_in',
+        suggestedCrop: 'center',
+        editingGuidance: 'Hold wide',
       },
       {
         sceneId: 'scene_2',
-        narrationText: 'Second line',
-        estimatedDurationSec: 3.0,
-        visualObjective: 'Build',
-        visualDescription: 'Desc 2',
-        searchQueries: ['query 2'],
-        preferredBrollType: 'action',
-        importance: 'medium',
-        editingGuidance: { cameraMotion: 'slow_zoom_out', cutPacing: 'moderate', transition: 'cut' },
+        narrationSegment: 'Gravity tears it to pieces.',
+        targetDurationSec: 5.5,
+        visualObjective: 'Tidal disruption',
+        visualDescription: 'Plasma ripping apart',
+        pexelsSearchQueries: ['plasma energy'],
+        visualPriority: 'normal',
+        suggestedMotion: 'zoom_out',
+        suggestedCrop: 'center',
+        editingGuidance: 'Dynamic punch',
       },
       {
         sceneId: 'scene_3',
-        narrationText: 'Final line',
-        estimatedDurationSec: 3.0,
-        visualObjective: 'Resolution',
-        visualDescription: 'Desc 3',
-        searchQueries: ['query 3'],
-        preferredBrollType: 'landscape',
-        importance: 'high',
-        editingGuidance: { cameraMotion: 'static', cutPacing: 'moderate', transition: 'cut' },
+        narrationSegment: 'Radiant energy blasts through the cosmos.',
+        targetDurationSec: 5.0, // note: planned is slightly shorter than remaining audio
+        visualObjective: 'Explosion aftermath',
+        visualDescription: 'Cosmic explosion',
+        pexelsSearchQueries: ['explosion space'],
+        visualPriority: 'high',
+        suggestedMotion: 'zoom_in',
+        suggestedCrop: 'center',
+        editingGuidance: 'End on wide vista',
       },
     ],
-    totalPlannedDurationSec: 9.0, // Initial estimate was only 9s, but audio is 15s!
-    targetAspectRatio: '9:16',
-    generatedAt: new Date().toISOString(),
+    totalScenes: 3,
+    totalEstimatedDurationSec: 15.7,
+    metadata: { model: 'test', generatedAt: new Date().toISOString() },
   };
 
-  const brollSelection: BrollSelectionArtifact = {
+  const mockBroll: BrollSelectionArtifact = {
     selections: [
       {
         sceneId: 'scene_1',
-        searchQueryUsed: 'query 1',
         selectedClip: {
-          id: 'clip_1',
-          provider: 'procedural',
-          sourceUrl: 'procedural://1',
+          id: 1,
+          url: 'http://example.com/1.mp4',
           localPath: '/tmp/clip1.mp4',
-          originalWidth: 1080,
-          originalHeight: 1920,
-          originalDurationSec: 10.0,
-          aspectRatio: 1080 / 1920,
+          duration: 10,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          orientation: 'landscape',
           score: 85,
-          scoreBreakdown: { semanticRelevance: 30, aspectRatioSuitability: 25, durationAdequacy: 15, resolutionQuality: 15 },
+          reason: 'Good match',
         },
-        candidatesEvaluated: 2,
-        reasoning: 'Best match',
+        evaluatedCandidates: [],
       },
       {
         sceneId: 'scene_2',
-        searchQueryUsed: 'query 2',
         selectedClip: {
-          id: 'clip_2',
-          provider: 'procedural',
-          sourceUrl: 'procedural://2',
+          id: 2,
+          url: 'http://example.com/2.mp4',
           localPath: '/tmp/clip2.mp4',
-          originalWidth: 1920,
-          originalHeight: 1080,
-          originalDurationSec: 10.0,
-          aspectRatio: 1920 / 1080,
-          score: 80,
-          scoreBreakdown: { semanticRelevance: 25, aspectRatioSuitability: 20, durationAdequacy: 15, resolutionQuality: 20 },
+          duration: 10,
+          width: 1080,
+          height: 1920,
+          fps: 30,
+          orientation: 'portrait',
+          score: 95,
+          reason: 'Native vertical',
         },
-        candidatesEvaluated: 2,
-        reasoning: 'Best match',
+        evaluatedCandidates: [],
       },
       {
         sceneId: 'scene_3',
-        searchQueryUsed: 'query 3',
         selectedClip: {
-          id: 'clip_3',
-          provider: 'procedural',
-          sourceUrl: 'procedural://3',
+          id: 3,
+          url: 'http://example.com/3.mp4',
           localPath: '/tmp/clip3.mp4',
-          originalWidth: 1080,
-          originalHeight: 1920,
-          originalDurationSec: 10.0,
-          aspectRatio: 1080 / 1920,
-          score: 90,
-          scoreBreakdown: { semanticRelevance: 30, aspectRatioSuitability: 25, durationAdequacy: 15, resolutionQuality: 20 },
+          duration: 10,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          orientation: 'landscape',
+          score: 80,
+          reason: 'Matches explosion',
         },
-        candidatesEvaluated: 2,
-        reasoning: 'Best match',
+        evaluatedCandidates: [],
       },
     ],
+    totalSelectedClips: 3,
     cacheHits: 0,
-    downloadsCount: 3,
-    generatedAt: new Date().toISOString(),
+    downloads: 3,
+    metadata: { generatedAt: new Date().toISOString() },
   };
 
-  const timeline = builder.buildTimeline('test_job', narration, scenePlan, brollSelection, {
-    width: 1080,
-    height: 1920,
-    fps: 30,
+  it('should anchor the final clip to exactly match the measured audio duration', () => {
+    const timeline = builder.buildTimeline(mockScenePlan, mockNarration, mockBroll, 'vertical-1080');
+
+    assert.strictEqual(timeline.tracks.videoClips.length, 3);
+    assert.strictEqual(timeline.actualAudioDurationSec, 16.425);
+    assert.strictEqual(timeline.totalVisualDurationSec, 16.425);
+
+    const lastClip = timeline.tracks.videoClips[2];
+    assert.strictEqual(lastClip.endTime, 16.425);
+    assert.strictEqual(lastClip.duration, Number((16.425 - (5.2 + 5.5)).toFixed(3)));
   });
 
-  assert.strictEqual(timeline.totalDurationSec, 15.0);
-  assert.strictEqual(timeline.videoClips.length, 3);
+  it('should store reframing calculations in the timeline artifact', () => {
+    const timeline = builder.buildTimeline(mockScenePlan, mockNarration, mockBroll, 'vertical-1080');
 
-  const totalClipsDuration = timeline.videoClips.reduce((sum, c) => sum + c.clipDurationSec, 0);
-  assert.ok(Math.abs(totalClipsDuration - 15.0) < 0.1, `Sum of clips (${totalClipsDuration}s) must equal narration duration (15.0s)`);
-  assert.strictEqual(timeline.videoClips[0].timelineStartSec, 0);
-  assert.strictEqual(timeline.videoClips[timeline.videoClips.length - 1].timelineEndSec, 15.0);
+    const landscapeClip = timeline.tracks.videoClips[0];
+    assert.strictEqual(landscapeClip.reframing.targetWidth, 1080);
+    assert.strictEqual(landscapeClip.reframing.targetHeight, 1920);
+    assert.strictEqual(landscapeClip.reframing.cropHeight, 1080);
+    assert.ok(landscapeClip.reframing.cropWidth <= 608);
+
+    const portraitClip = timeline.tracks.videoClips[1];
+    assert.strictEqual(portraitClip.reframing.targetWidth, 1080);
+    assert.strictEqual(portraitClip.reframing.targetHeight, 1920);
+    assert.strictEqual(portraitClip.reframing.cropWidth, 1080);
+    assert.strictEqual(portraitClip.reframing.cropHeight, 1920);
+  });
 });

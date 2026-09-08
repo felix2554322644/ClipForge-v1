@@ -1,34 +1,46 @@
-import test from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { EditingPrimitives } from '../src/server/services/EditingPrimitives.js';
+import { ReframingService } from '../src/services/media/reframing';
 
-test('EditingPrimitives correctly reframes landscape 16:9 to vertical 9:16', () => {
-  // 1920x1080 -> 1080x1920
-  const reframing = EditingPrimitives.computeVerticalReframing(1920, 1080, 1080, 1920);
+describe('9:16 Reframing Calculations', () => {
+  const reframer = new ReframingService();
 
-  // Height scaled to 1920, width scaled proportionally to 3414 (even)
-  assert.strictEqual(reframing.scaleHeight, 1920);
-  assert.strictEqual(reframing.cropY, 0);
-  assert.ok(reframing.cropX > 0, 'Excess width must be cropped from center');
-  assert.ok(reframing.filterString.includes('scale=1080:1920:force_original_aspect_ratio=increase'));
-  assert.ok(reframing.filterString.includes('crop=1080:1920'));
-});
+  it('should crop 16:9 landscape (1920x1080) to exact 9:16 vertical without distortion', () => {
+    const result = reframer.calculateReframing(1920, 1080, 1080, 1920, 'center');
 
-test('EditingPrimitives handles native vertical 9:16 without distortion', () => {
-  const reframing = EditingPrimitives.computeVerticalReframing(1080, 1920, 1080, 1920);
-  assert.strictEqual(reframing.scaleWidth, 1080);
-  assert.strictEqual(reframing.scaleHeight, 1920);
-  assert.strictEqual(reframing.cropX, 0);
-  assert.strictEqual(reframing.cropY, 0);
-});
+    // Expected crop width = 1080 * (9/16) = 607.5 -> 606 or 608 (even number)
+    assert.strictEqual(result.cropHeight, 1080);
+    assert.strictEqual(result.cropWidth % 2, 0);
+    assert.ok(result.cropWidth >= 606 && result.cropWidth <= 608);
 
-test('EditingPrimitives produces valid zoom filter expressions', () => {
-  const zoomIn = EditingPrimitives.buildZoomFilter('slow_zoom_in', 1080, 1920, 3.0, 30);
-  assert.ok(zoomIn.includes('1+0.08*n/'));
+    // Centered crop X offset
+    const expectedX = Math.round((1920 - result.cropWidth) / 2);
+    assert.strictEqual(result.cropX, expectedX % 2 === 0 ? expectedX : expectedX - 1);
+    assert.strictEqual(result.cropY, 0);
+    assert.strictEqual(result.targetWidth, 1080);
+    assert.strictEqual(result.targetHeight, 1920);
+  });
 
-  const zoomOut = EditingPrimitives.buildZoomFilter('slow_zoom_out', 1080, 1920, 3.0, 30);
-  assert.ok(zoomOut.includes('1.08-0.08*n/'));
+  it('should handle native portrait 1080x1920 with full frame usage', () => {
+    const result = reframer.calculateReframing(1080, 1920, 1080, 1920, 'center');
 
-  const staticFilter = EditingPrimitives.buildZoomFilter('static', 1080, 1920, 3.0, 30);
-  assert.ok(!staticFilter.includes('eval=frame'));
+    assert.strictEqual(result.cropWidth, 1080);
+    assert.strictEqual(result.cropHeight, 1920);
+    assert.strictEqual(result.cropX, 0);
+    assert.strictEqual(result.cropY, 0);
+    assert.strictEqual(result.scaleFactor, 1.0);
+  });
+
+  it('should support directional anchors: focus_left and focus_right', () => {
+    const left = reframer.calculateReframing(1920, 1080, 1080, 1920, 'focus_left');
+    const right = reframer.calculateReframing(1920, 1080, 1080, 1920, 'focus_right');
+
+    assert.ok(left.cropX < right.cropX, 'Left anchor cropX should be less than right anchor cropX');
+  });
+
+  it('should produce a valid FFmpeg filter string', () => {
+    const result = reframer.calculateReframing(1920, 1080, 1080, 1920, 'center');
+    assert.ok(result.filterString.startsWith('crop='));
+    assert.ok(result.filterString.includes('scale=1080:1920'));
+  });
 });

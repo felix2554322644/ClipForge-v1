@@ -1,0 +1,42 @@
+{
+  "jobId": "job_1788872868296_275d7c",
+  "renderStartedAt": "2026-09-08T13:09:36.970Z",
+  "renderCompletedAt": "2026-09-08T13:09:57.376Z",
+  "renderDurationSec": 20.41,
+  "profile": "vertical-1080",
+  "resolution": {
+    "width": 1080,
+    "height": 1920
+  },
+  "ffmpegCommand": "ffmpeg -y -i /app/applet/cache/footage/clip_proc_64656570_a_1080x1920.mp4 -i /app/applet/cache/footage/clip_proc_706c6173_a_1080x1920.mp4 -i /app/applet/cache/footage/clip_proc_6e656275_a_1080x1920.mp4 -i /app/applet/cache/footage/clip_proc_65617274_a_1080x1920.mp4 -i /app/applet/artifacts/job_1788872868296_275d7c/narration.wav -filter_complex \"[0:v]loop=loop=-1:size=60:start=0,trim=start=0.000:duration=7.508,setpts=PTS-STARTPTS,crop=1080:1920:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30[v0];[1:v]loop=loop=-1:size=60:start=0,trim=start=0.000:duration=6.793,setpts=PTS-STARTPTS,crop=1080:1920:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30[v1];[2:v]loop=loop=-1:size=60:start=0,trim=start=0.000:duration=5.006,setpts=PTS-STARTPTS,crop=1080:1920:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30[v2];[3:v]loop=loop=-1:size=60:start=0,trim=start=0.000:duration=5.363,setpts=PTS-STARTPTS,crop=1080:1920:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30[v3];[v0][v1][v2][v3]concat=n=4:v=1:a=0[vconcat]\" -map [vconcat] -map 4:a -c:v libx264 -preset fast -crf 22 -b:v 4500k -maxrate 6000k -bufsize 12000k -pix_fmt yuv420p -c:a aac -b:a 192k -ar 44100 -ac 2 -t 24.670 -movflags +faststart /app/applet/artifacts/job_1788872868296_275d7c/final-video.mp4",
+  "inputAssets": [
+    {
+      "path": "/app/applet/cache/footage/clip_proc_64656570_a_1080x1920.mp4",
+      "duration": 7.508,
+      "type": "video"
+    },
+    {
+      "path": "/app/applet/cache/footage/clip_proc_706c6173_a_1080x1920.mp4",
+      "duration": 6.793,
+      "type": "video"
+    },
+    {
+      "path": "/app/applet/cache/footage/clip_proc_6e656275_a_1080x1920.mp4",
+      "duration": 5.006,
+      "type": "video"
+    },
+    {
+      "path": "/app/applet/cache/footage/clip_proc_65617274_a_1080x1920.mp4",
+      "duration": 5.363,
+      "type": "video"
+    },
+    {
+      "path": "/app/applet/artifacts/job_1788872868296_275d7c/narration.wav",
+      "duration": 24.67,
+      "type": "audio"
+    }
+  ],
+  "outputPath": "/app/applet/artifacts/job_1788872868296_275d7c/final-video.mp4",
+  "outputSizeBytes": 1811392,
+  "success": true
+}

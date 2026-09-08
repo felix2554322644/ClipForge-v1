@@ -1,0 +1,42 @@
+[
+  {
+    "id": "proc_706c6173_a",
+    "provider": "pexels",
+    "localPath": "/app/applet/cache/footage/clip_proc_706c6173_a_1080x1920.mp4",
+    "fileSizeBytes": 778289,
+    "width": 1080,
+    "height": 1920,
+    "duration": 7,
+    "downloadedAt": "2026-09-08T13:09:36.967Z"
+  },
+  {
+    "id": "proc_6e656275_a",
+    "provider": "pexels",
+    "localPath": "/app/applet/cache/footage/clip_proc_6e656275_a_1080x1920.mp4",
+    "fileSizeBytes": 571668,
+    "width": 1080,
+    "height": 1920,
+    "duration": 6,
+    "downloadedAt": "2026-09-08T13:09:36.968Z"
+  },
+  {
+    "id": "proc_65617274_a",
+    "provider": "pexels",
+    "localPath": "/app/applet/cache/footage/clip_proc_65617274_a_1080x1920.mp4",
+    "fileSizeBytes": 665492,
+    "width": 1080,
+    "height": 1920,
+    "duration": 6,
+    "downloadedAt": "2026-09-08T13:09:36.969Z"
+  },
+  {
+    "id": "proc_64656570_a",
+    "provider": "pexels",
+    "localPath": "/app/applet/cache/footage/clip_proc_64656570_a_1080x1920.mp4",
+    "fileSizeBytes": 887732,
+    "width": 1080,
+    "height": 1920,
+    "duration": 8,
+    "downloadedAt": "2026-09-08T13:09:36.966Z"
+  }
+]

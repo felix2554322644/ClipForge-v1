@@ -1,0 +1,74 @@
+{
+  "scenes": [
+    {
+      "sceneId": "scene_1",
+      "narrationSegment": "Did you know that How black holes destroy stars might be one of the most violent spectacles in the entire universe?",
+      "targetDurationSec": 7.508,
+      "visualObjective": "Immediate visual hook with vast cosmic scope",
+      "visualDescription": "Cinematic high-contrast footage depicting astronomical phenomenon for beat 1",
+      "pexelsSearchQueries": [
+        "deep space stars",
+        "galaxy cinematic",
+        "night sky telescope"
+      ],
+      "visualPriority": "high",
+      "suggestedMotion": "zoom_in",
+      "suggestedCrop": "center",
+      "editingGuidance": "Smooth camera movement, clean punchy visual cut"
+    },
+    {
+      "sceneId": "scene_2",
+      "narrationSegment": "As matter is drawn past the point of no return, gravitational friction heats surrounding gas to millions of degrees.",
+      "targetDurationSec": 6.793,
+      "visualObjective": "Escalate narrative tension and visual scale",
+      "visualDescription": "Cinematic high-contrast footage depicting astronomical phenomenon for beat 2",
+      "pexelsSearchQueries": [
+        "plasma energy",
+        "solar flare",
+        "cosmic explosion"
+      ],
+      "visualPriority": "normal",
+      "suggestedMotion": "zoom_out",
+      "suggestedCrop": "center",
+      "editingGuidance": "Smooth camera movement, clean punchy visual cut"
+    },
+    {
+      "sceneId": "scene_3",
+      "narrationSegment": "Tidal forces stretch entire stars into incandescent ribbons of plasma, before consuming them entirely.",
+      "targetDurationSec": 5.006,
+      "visualObjective": "Escalate narrative tension and visual scale",
+      "visualDescription": "Cinematic high-contrast footage depicting astronomical phenomenon for beat 3",
+      "pexelsSearchQueries": [
+        "nebula space",
+        "astronomy particles",
+        "black hole vortex"
+      ],
+      "visualPriority": "normal",
+      "suggestedMotion": "zoom_in",
+      "suggestedCrop": "center",
+      "editingGuidance": "Smooth camera movement, clean punchy visual cut"
+    },
+    {
+      "sceneId": "scene_4",
+      "narrationSegment": "What remains are radiant shockwaves that illuminate the dark cosmos for billions of light years.",
+      "targetDurationSec": 5.363,
+      "visualObjective": "Escalate narrative tension and visual scale",
+      "visualDescription": "Cinematic high-contrast footage depicting astronomical phenomenon for beat 4",
+      "pexelsSearchQueries": [
+        "earth space view",
+        "aurora borealis",
+        "cosmos glowing"
+      ],
+      "visualPriority": "normal",
+      "suggestedMotion": "zoom_out",
+      "suggestedCrop": "center",
+      "editingGuidance": "Smooth camera movement, clean punchy visual cut"
+    }
+  ],
+  "totalScenes": 4,
+  "totalEstimatedDurationSec": 24.67,
+  "metadata": {
+    "model": "deterministic-offline-scene-planner",
+    "generatedAt": "2026-09-08T13:09:20.723Z"
+  }
+}
