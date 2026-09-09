@@ -71,12 +71,16 @@ export interface ScenePlanOutput {
   captions?: CaptionSegment[];
 }
 
+export type BrollProviderName = 'pexels' | 'pixabay' | 'procedural' | 'cache';
+
 export interface BrollScoreBreakdown {
+  portrait: number;
   resolution: number;
-  aspectRatio: number;
   durationMatch: number;
   semantic: number;
   uniqueness: number;
+  cropSafety?: number;
+  aspectRatio?: number; // compatibility alias for portrait
 }
 
 export interface BrollCandidate {
@@ -88,9 +92,15 @@ export interface BrollCandidate {
   aspectRatio: number;
   durationSeconds: number;
   relevanceScore: number;
-  source: 'pexels' | 'cache' | 'procedural';
+  source: BrollProviderName;
+  provider?: BrollProviderName;
+  providerAssetId?: string;
+  nativeVertical?: boolean;
+  cropRequired?: boolean;
+  cropAmount?: number;
   scoreBreakdown?: BrollScoreBreakdown;
   selectionReason?: string;
+  queryUsed?: string;
 }
 
 export interface SelectedBrollShot {
@@ -98,6 +108,13 @@ export interface SelectedBrollShot {
   sceneIndex: number;
   shotIndex: number;
   queryUsed: string;
+  provider?: BrollProviderName;
+  providerAssetId?: string;
+  nativeVertical?: boolean;
+  sourceDimensions?: { width: number; height: number };
+  sourceAspectRatio?: number;
+  cropRequired?: boolean;
+  cropAmount?: number;
   broll: BrollCandidate;
   inPoint: number;
   outPoint: number;
@@ -106,17 +123,38 @@ export interface SelectedBrollShot {
   selectionReason?: string;
 }
 
-// Backward compatibility alias
+// Backward compatibility alias with enhanced metadata
 export interface SelectedBrollScene {
   sceneIndex: number;
   shotId?: string;
   shotIndex?: number;
+  provider?: BrollProviderName;
+  providerAssetId?: string;
+  nativeVertical?: boolean;
+  sourceDimensions?: { width: number; height: number };
+  sourceAspectRatio?: number;
+  cropRequired?: boolean;
+  cropAmount?: number;
+  queryUsed?: string;
   broll: BrollCandidate;
   inPoint: number;
   outPoint: number;
   reframedPath?: string;
   scoreBreakdown?: BrollScoreBreakdown;
   selectionReason?: string;
+}
+
+export interface CaptionTheme {
+  fontName: string;
+  fontSize: number;
+  primaryColor: string; // ASS hex &H00FFFFFF&
+  outlineColor: string; // ASS hex &H00000000&
+  outlineWidth: number;
+  shadowDepth: number;
+  emphasisColor: string; // ASS hex e.g. &H0000E6FF&
+  emphasisScalePercent: number; // e.g. 112
+  marginVertical: number; // Safe area placement e.g. 520
+  animationFadeMs: number;
 }
 
 export interface TimelineCut {

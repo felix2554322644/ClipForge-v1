@@ -1,35 +1,65 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { CaptionSegment } from '../../types/pipeline';
+import { CaptionSegment, CaptionTheme } from '../../types/pipeline';
 import { PipelineLogger } from '../logging/logger';
 
+export const DEFAULT_CAPTION_THEME: CaptionTheme = {
+  fontName: 'Liberation Sans',
+  fontSize: 78,
+  primaryColor: '&H00FFFFFF&', // Crisp White (ASS &HAABBGGRR&)
+  outlineColor: '&H00000000&', // Solid Black
+  outlineWidth: 8,
+  shadowDepth: 4,
+  emphasisColor: '&H0000E6FF&', // Vibrant TikTok Golden Yellow (#FFE600)
+  emphasisScalePercent: 112, // Subtle 112% pop
+  marginVertical: 520, // Lower-middle safe area (well clear of TikTok/Reels UI)
+  animationFadeMs: 70, // Fast, punchy phrase transition
+};
+
 export class CaptionEngine {
-  constructor(private logger?: PipelineLogger) {}
+  private theme: CaptionTheme;
+
+  constructor(
+    private logger?: PipelineLogger,
+    customTheme?: Partial<CaptionTheme>
+  ) {
+    this.theme = { ...DEFAULT_CAPTION_THEME, ...customTheme };
+  }
 
   /**
-   * Generates synchronized caption segments and an ASS subtitle file
-   * for burning into vertical video.
+   * Generates synchronized short-form social captions (TikTok/Reels/Shorts style)
+   * with word-level emphasis and burns them into an ASS subtitle file.
    */
   generateCaptions(
     narrationText: string,
     totalDurationSeconds: number,
     outputAssPath?: string
   ): { segments: CaptionSegment[]; assPath?: string } {
-    this.logger?.stage('CAPTIONS', `Generating synchronized short-form captions (${totalDurationSeconds.toFixed(2)}s)`);
+    this.logger?.stage(
+      'CAPTIONS',
+      `Generating social short-form captions (${totalDurationSeconds.toFixed(2)}s, theme=${this.theme.fontName} ${this.theme.fontSize}px)`
+    );
 
-    const chunks = this.chunkText(narrationText);
+    const rawChunks = this.chunkText(narrationText);
+
+    // Filter out punctuation-only or empty chunks
+    const chunks = rawChunks.filter((c) => {
+      const alphanumeric = c.replace(/[^a-zA-Z0-9]/g, '');
+      return alphanumeric.length > 0;
+    });
+
     if (chunks.length === 0) {
       return { segments: [] };
     }
 
-    // Compute duration weights based on character and word count
+    // Compute proportional duration weights based on character and word count
     const weights = chunks.map((chunk) => {
       const charCount = chunk.length;
       const wordCount = chunk.split(/\s+/).length;
-      return charCount * 1.0 + wordCount * 2.5;
+      return charCount * 1.0 + wordCount * 2.8;
     });
 
-    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0) || 1;
     const segments: CaptionSegment[] = [];
 
     let currentTime = 0;
@@ -65,89 +95,131 @@ export class CaptionEngine {
     let assPath: string | undefined;
     if (outputAssPath) {
       assPath = this.writeAssFile(segments, outputAssPath);
-      this.logger?.info(`Burn-in subtitle file generated with ${segments.length} chunks: ${assPath}`);
+      this.logger?.info(
+        `Social caption file burned with ${segments.length} phrase chunks: ${assPath}`
+      );
     }
 
     return { segments, assPath };
   }
 
   /**
-   * Splits continuous narration text into 2-5 word natural spoken phrases.
+   * Splits continuous narration text into 2-5 word natural spoken phrase chunks,
+   * strictly preventing punctuation-only fragments or single-letter words.
    */
   private chunkText(text: string): string[] {
     const cleaned = text.trim().replace(/\s+/g, ' ');
     if (!cleaned) return [];
 
-    // First split by punctuation marks that indicate natural pauses
+    // Split by major punctuation pauses (. , ; : ! ? — -)
     const clauseRegex = /[^,.;:!?—\-]+[,.;:!?—\-]?/g;
     const rawClauses = cleaned.match(clauseRegex) || [cleaned];
 
     const resultChunks: string[] = [];
 
-    for (const clause of rawClauses) {
-      const words = clause.trim().split(/\s+/).filter(Boolean);
+    for (const rawClause of rawClauses) {
+      // Strip trailing punctuation from clause to prevent punctuation artifacts
+      const cleanClause = rawClause.trim();
+      const words = cleanClause.split(/\s+/).filter(Boolean);
+
       if (words.length <= 4) {
-        if (words.length > 0) {
-          resultChunks.push(words.join(' '));
+        const joined = words.join(' ');
+        // Check that it's not purely punctuation
+        if (joined.replace(/[^a-zA-Z0-9]/g, '').length > 0) {
+          resultChunks.push(joined);
         }
         continue;
       }
 
-      // If clause is longer than 4 words, break into 2-4 word chunks
+      // Break longer clauses into 2-4 word rhythmic chunks
       let currentChunk: string[] = [];
       for (let i = 0; i < words.length; i++) {
         currentChunk.push(words[i]);
 
-        // Break if we have 3-4 words or if the next word starts a prepositional phrase
         const isLastWord = i === words.length - 1;
         const reachedTargetLength = currentChunk.length >= 3;
         const wordsLeft = words.length - (i + 1);
 
         if (isLastWord || (reachedTargetLength && wordsLeft >= 2) || currentChunk.length >= 4) {
-          resultChunks.push(currentChunk.join(' '));
+          const chunkStr = currentChunk.join(' ');
+          if (chunkStr.replace(/[^a-zA-Z0-9]/g, '').length > 0) {
+            resultChunks.push(chunkStr);
+          }
           currentChunk = [];
         }
       }
 
       if (currentChunk.length > 0) {
-        if (resultChunks.length > 0 && currentChunk.length === 1) {
-          // Merge single hanging word into previous chunk
-          resultChunks[resultChunks.length - 1] += ' ' + currentChunk[0];
-        } else {
-          resultChunks.push(currentChunk.join(' '));
+        const chunkStr = currentChunk.join(' ');
+        if (chunkStr.replace(/[^a-zA-Z0-9]/g, '').length > 0) {
+          if (resultChunks.length > 0 && currentChunk.length === 1) {
+            // Merge single hanging word into previous chunk
+            resultChunks[resultChunks.length - 1] += ' ' + currentChunk[0];
+          } else {
+            resultChunks.push(chunkStr);
+          }
         }
       }
     }
 
-    return resultChunks;
+    // Final sanitation pass: remove any lingering punctuation-only entries
+    return resultChunks.filter((chunk) => chunk.replace(/[^a-zA-Z0-9]/g, '').length > 0);
   }
 
   /**
-   * Detects words to visually emphasize (numbers, uppercase words, scientific focus).
+   * Detects high-impact words to visually pop (numbers, uppercase terms, scientific focus).
    */
-  private detectEmphasis(text: string): { hasEmphasis: boolean; emphasisWords: string[] } {
+  public detectEmphasis(text: string): { hasEmphasis: boolean; emphasisWords: string[] } {
     const words = text.split(/\s+/);
     const emphasisWords: string[] = [];
+
+    const highImpactTerms = new Set([
+      'magnetar',
+      'magnetars',
+      'trillion',
+      'trillions',
+      'billion',
+      'billions',
+      'million',
+      'millions',
+      'thousand',
+      'thousands',
+      'shockwave',
+      'supernova',
+      'dead star',
+      'neutron',
+      'light years',
+      'extreme',
+      'burst',
+      'bursts',
+      'radio',
+      'signal',
+      'signals',
+      'earth',
+      'cosmic',
+      'galaxy',
+      'mysterious',
+      'powerful',
+    ]);
 
     for (const rawWord of words) {
       const stripped = rawWord.replace(/[^a-zA-Z0-9]/g, '');
       if (!stripped) continue;
 
-      // Check for numbers or words with digits (e.g., "10,000", "300x")
+      // 1. Numbers / quantities (e.g. "10,000", "1,000x", "300")
       if (/\d/.test(stripped)) {
         emphasisWords.push(stripped);
         continue;
       }
 
-      // Check for all-caps words of length >= 2 (e.g., "MAGNETAR", "NASA")
+      // 2. All-caps terms of 2+ letters (e.g. "FRB", "NASA", "MAGNETAR")
       if (stripped.length >= 2 && stripped === stripped.toUpperCase()) {
         emphasisWords.push(stripped);
         continue;
       }
 
-      // Check for key scientific high-impact terms
-      const highImpact = ['magnetar', 'trillions', 'billion', 'shockwave', 'supernova', 'galaxy', 'dead star'];
-      if (highImpact.includes(stripped.toLowerCase())) {
+      // 3. High-impact keywords
+      if (highImpactTerms.has(stripped.toLowerCase())) {
         emphasisWords.push(stripped);
       }
     }
@@ -175,7 +247,8 @@ export class CaptionEngine {
   }
 
   /**
-   * Generates and writes ASS subtitle file with vertical video styling and emphasis highlighting.
+   * Generates and writes ASS subtitle file with modern social short-form typography,
+   * safe-zone margin, accent color pop, and subtle entry animation.
    */
   private writeAssFile(segments: CaptionSegment[], outPath: string): string {
     const dir = path.dirname(outPath);
@@ -183,7 +256,21 @@ export class CaptionEngine {
       fs.mkdirSync(dir, { recursive: true });
     }
 
+    const {
+      fontName,
+      fontSize,
+      primaryColor,
+      outlineColor,
+      outlineWidth,
+      shadowDepth,
+      emphasisColor,
+      emphasisScalePercent,
+      marginVertical,
+      animationFadeMs,
+    } = this.theme;
+
     const header = `[Script Info]
+Title: TikTok / Reels Social Captions
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
@@ -191,7 +278,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ShortForm,Liberation Sans,68,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,2,0,1,6,3,2,100,100,380,1
+Style: SocialCaptions,${fontName},${fontSize},${primaryColor},&H000000FF,${outlineColor},&H80000000,-1,0,0,0,100,100,2,0,1,${outlineWidth},${shadowDepth},2,80,80,${marginVertical},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -202,15 +289,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const end = this.formatAssTime(seg.endTime);
 
       let text = seg.text;
+
+      // Word-level emphasis with accent color and scale pop
       if (seg.isEmphasis && seg.emphasisWords && seg.emphasisWords.length > 0) {
         for (const emp of seg.emphasisWords) {
           const regex = new RegExp(`\\b(${emp})\\b`, 'i');
-          // Highlight with high-contrast vibrant cyan/gold accent (&H00D4FF& or &H00FFFF&)
-          text = text.replace(regex, '{\\c&H00D4FF&\\b1}$1{\\c&HFFFFFF&\\b0}');
+          text = text.replace(
+            regex,
+            `{\\c${emphasisColor}\\b1\\fscx${emphasisScalePercent}\\fscy${emphasisScalePercent}}$1{\\c${primaryColor}\\b1\\fscx100\\fscy100}`
+          );
         }
       }
 
-      return `Dialogue: 0,${start},${end},ShortForm,,0,0,0,,${text}`;
+      // Subtle phrase entry/exit fade animation
+      const animTag = `{\\fad(${animationFadeMs},${animationFadeMs})}`;
+
+      return `Dialogue: 0,${start},${end},SocialCaptions,,0,0,0,,${animTag}${text}`;
     });
 
     const content = header + events.join('\n') + '\n';
