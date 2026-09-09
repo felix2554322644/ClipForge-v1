@@ -14,10 +14,12 @@ import { FfmpegRenderer } from '../services/rendering/ffmpegRenderer';
 import { FfprobeValidator } from '../services/validation/ffprobeValidator';
 import { PipelineJob } from '../contracts/job';
 import { ARTIFACT_FILES, getArtifactPath } from '../contracts/artifacts';
+import { TopicManager } from '../services/topics/manager';
 
 export class VideoPipelineOrchestrator {
   private logger: PipelineLogger;
   private gemini: GeminiClient;
+  private topicManager: TopicManager;
   private researcher: ResearchService;
   private scriptwriter: ScriptwriterService;
   private narrationEngine: PiperNarrationEngine;
@@ -28,9 +30,10 @@ export class VideoPipelineOrchestrator {
   private renderer: FfmpegRenderer;
   private validator: FfprobeValidator;
 
-  constructor() {
+  constructor(geminiClient?: GeminiClient, topicManager?: TopicManager) {
     this.logger = new PipelineLogger();
-    this.gemini = new GeminiClient();
+    this.gemini = geminiClient || new GeminiClient();
+    this.topicManager = topicManager || new TopicManager({ logger: this.logger });
     this.researcher = new ResearchService(this.gemini, this.logger);
     this.scriptwriter = new ScriptwriterService(this.gemini, this.logger);
     this.narrationEngine = new PiperNarrationEngine(this.logger);
@@ -42,7 +45,15 @@ export class VideoPipelineOrchestrator {
     this.validator = new FfprobeValidator(this.logger);
   }
 
-  async runJob(topic: string, outputDirectory?: string): Promise<PipelineJob> {
+  async runJob(
+    topicInput?: string,
+    outputDirectory?: string,
+    options?: { duration?: number; profile?: string }
+  ): Promise<PipelineJob> {
+    const resolved = this.topicManager.resolveTopic(topicInput);
+    const activeTopic = resolved.topic;
+    const topicMode = resolved.mode;
+
     const jobId = `job_${Date.now()}_${Math.random().toString(16).substring(2, 8)}`;
     const jobDir = outputDirectory || path.join(CONFIG.OUTPUT_DIR, jobId);
 
@@ -51,11 +62,15 @@ export class VideoPipelineOrchestrator {
     }
 
     this.logger.setLogDirectory(jobDir);
-    this.logger.info(`Starting video pipeline job: ${jobId} for topic: "${topic}"`);
+    this.logger.info(`Starting video pipeline job: ${jobId} (mode: ${topicMode}) for topic: "${activeTopic}"`);
 
     const job: PipelineJob = {
       id: jobId,
-      topic,
+      jobId,
+      topic: activeTopic,
+      topicMode,
+      duration: options?.duration || 30,
+      profile: options?.profile || 'vertical-1080',
       status: 'RUNNING',
       currentStage: 'RESEARCH',
       progressPercent: 5,
@@ -70,7 +85,7 @@ export class VideoPipelineOrchestrator {
       job.currentStage = 'RESEARCH';
       job.progressPercent = 15;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
-      const brief = await this.researcher.conductResearch(topic);
+      const brief = await this.researcher.conductResearch(activeTopic);
       this.saveArtifact(jobDir, ARTIFACT_FILES.RESEARCH, brief);
 
       // 2. High-Retention Scriptwriting
@@ -131,6 +146,7 @@ export class VideoPipelineOrchestrator {
         captions,
         captionAssFile
       );
+      job.duration = timeline.totalDurationSeconds;
       this.saveArtifact(jobDir, ARTIFACT_FILES.TIMELINE, timeline);
 
       // 7. Video Composite Rendering (burns in ASS captions, enforces exact audio duration)

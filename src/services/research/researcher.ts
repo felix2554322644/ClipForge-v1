@@ -22,17 +22,17 @@ Return a JSON object with:
 - "recommendedPacing": "fast" | "moderate" | "dramatic"`;
 
     const brief = await this.gemini.generateJson<ResearchBrief>(prompt, () => {
-      this.logger.warn('Using deterministic research brief fallback.');
+      this.logger.warn(`Using deterministic research brief fallback for "${topic}".`);
       return {
         topic,
-        hook: `Billions of light years away, incomprehensible cosmic signals are hitting Earth right now.`,
-        coreAngle: `Unraveling the mystery of millisecond-duration fast radio bursts that outshine entire galaxies.`,
+        hook: `Discover the incredible story behind ${topic}.`,
+        coreAngle: `A deep dive exploring ${topic} and why it matters.`,
         keyFacts: [
-          `Fast radio bursts release as much energy in a millisecond as our Sun radiates in days.`,
-          `Most FRBs flash just once and vanish forever, but magnetars are emerging as prime suspects.`,
-          `Astronomers use massive radio dish arrays across continents to pinpoint their home galaxies.`
+          `Fascinating developments and discoveries have shaped our understanding of ${topic}.`,
+          `Surprising details make ${topic} one of the most intriguing subjects today.`,
+          `Modern research continues to uncover new dimensions about ${topic}.`
         ],
-        visualThemes: ['deep space galaxy', 'radio telescope dish', 'pulsar neutron star', 'cosmic explosion'],
+        visualThemes: [topic.toLowerCase(), 'cinematic nature', 'science exploration', 'technology'],
         recommendedPacing: 'fast'
       };
     });

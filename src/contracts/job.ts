@@ -13,7 +13,11 @@ export type PipelineStage =
 
 export interface PipelineJob {
   id: string;
+  jobId?: string;
   topic: string;
+  topicMode?: 'EXPLICIT' | 'ROTATION';
+  duration?: number;
+  profile?: string;
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
   currentStage: PipelineStage;
   progressPercent: number;

@@ -1,0 +1,84 @@
+{
+  "topics": [
+    {
+      "id": "science_frb",
+      "category": "Science",
+      "topic": "The Mystery of Deep Space Fast Radio Bursts"
+    },
+    {
+      "id": "science_black_holes",
+      "category": "Science",
+      "topic": "What Happens Inside a Black Hole"
+    },
+    {
+      "id": "science_neutron_stars",
+      "category": "Science",
+      "topic": "Why Neutron Stars Are So Strange"
+    },
+    {
+      "id": "science_jwst",
+      "category": "Science",
+      "topic": "How the James Webb Telescope Sees Distant Galaxies"
+    },
+    {
+      "id": "science_dark_matter",
+      "category": "Science",
+      "topic": "What We Know About Dark Matter"
+    },
+    {
+      "id": "tech_ai_learning",
+      "category": "Technology",
+      "topic": "How Artificial Intelligence Actually Learns"
+    },
+    {
+      "id": "tech_microchips",
+      "category": "Technology",
+      "topic": "Why Computer Chips Keep Getting Smaller"
+    },
+    {
+      "id": "tech_gps",
+      "category": "Technology",
+      "topic": "How GPS Satellites Know Where You Are"
+    },
+    {
+      "id": "tech_quantum_computing",
+      "category": "Technology",
+      "topic": "What Quantum Computers Are Trying to Solve"
+    },
+    {
+      "id": "history_atlantis",
+      "category": "History",
+      "topic": "The Mystery Behind the Lost City of Atlantis"
+    },
+    {
+      "id": "history_roman_aqueducts",
+      "category": "History",
+      "topic": "How the Roman Empire Built Unstoppable Aqueducts"
+    },
+    {
+      "id": "history_transcontinental_railroad",
+      "category": "History",
+      "topic": "The Story of the First Transcontinental Railroad"
+    },
+    {
+      "id": "nature_octopus_camouflage",
+      "category": "Nature",
+      "topic": "How Octopuses Instantly Change Color"
+    },
+    {
+      "id": "nature_lightning_strikes",
+      "category": "Nature",
+      "topic": "Why Lightning Strikes From the Ground Up"
+    },
+    {
+      "id": "nature_whale_communication",
+      "category": "Nature",
+      "topic": "How Whales Communicate Across Entire Oceans"
+    },
+    {
+      "id": "nature_deep_sea_vents",
+      "category": "Nature",
+      "topic": "The Alien Creatures of Deep Sea Hydrothermal Vents"
+    }
+  ]
+}
