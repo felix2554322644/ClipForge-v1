@@ -1,0 +1,76 @@
+name: Autonomous AI Video Generator Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'Topic for the generated vertical video'
+        required: false
+        default: 'The Mystery of Deep Space Fast Radio Bursts'
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  generate:
+    name: Build, Verify & Run Video Pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Cache Piper Engine and Voice Models
+        uses: actions/cache@v4
+        id: piper-cache
+        with:
+          path: |
+            bin/piper
+            models
+          key: piper-${{ runner.os }}-${{ runner.arch }}-v2023.11.14-2
+          restore-keys: |
+            piper-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Setup Piper TTS Runtime & Voice Models
+        run: bash scripts/setup-piper.sh
+
+      - name: Setup FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          ffmpeg-version: 'release'
+
+      - name: Pre-flight Verification of Piper Voice Synthesis
+        run: npm run verify:piper
+
+      - name: Run Type Check & Verification Tests
+        run: |
+          npm run lint
+          npm test
+
+      - name: Execute Autonomous Video Generation
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          VIDEO_TOPIC: ${{ github.event.inputs.topic || 'The Mystery of Deep Space Fast Radio Bursts' }}
+          ALLOW_FALLBACKS: 'false'
+        run: npm run generate
+
+      - name: Upload Video Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-artifacts
+          path: artifacts/
+          retention-days: 14
