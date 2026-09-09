@@ -6,6 +6,7 @@ import { GeminiClient } from '../services/gemini/client';
 import { ResearchService } from '../services/research/researcher';
 import { ScriptwriterService } from '../services/scripting/scriptwriter';
 import { PiperNarrationEngine } from '../services/narration/piper';
+import { CaptionEngine } from '../services/captions/captionEngine';
 import { ScenePlanner } from '../services/scenes/planner';
 import { BrollSearcher } from '../services/broll/searcher';
 import { TimelineBuilder } from '../services/timeline/builder';
@@ -20,6 +21,7 @@ export class VideoPipelineOrchestrator {
   private researcher: ResearchService;
   private scriptwriter: ScriptwriterService;
   private narrationEngine: PiperNarrationEngine;
+  private captionEngine: CaptionEngine;
   private scenePlanner: ScenePlanner;
   private brollSearcher: BrollSearcher;
   private timelineBuilder: TimelineBuilder;
@@ -32,6 +34,7 @@ export class VideoPipelineOrchestrator {
     this.researcher = new ResearchService(this.gemini, this.logger);
     this.scriptwriter = new ScriptwriterService(this.gemini, this.logger);
     this.narrationEngine = new PiperNarrationEngine(this.logger);
+    this.captionEngine = new CaptionEngine(this.logger);
     this.scenePlanner = new ScenePlanner(this.logger);
     this.brollSearcher = new BrollSearcher(this.logger);
     this.timelineBuilder = new TimelineBuilder(this.logger);
@@ -48,35 +51,33 @@ export class VideoPipelineOrchestrator {
     }
 
     this.logger.setLogDirectory(jobDir);
+    this.logger.info(`Starting video pipeline job: ${jobId} for topic: "${topic}"`);
 
     const job: PipelineJob = {
       id: jobId,
       topic,
       status: 'RUNNING',
-      currentStage: 'INITIALIZING',
+      currentStage: 'RESEARCH',
       progressPercent: 5,
-      outputDirectory: jobDir,
       startedAt: new Date().toISOString(),
+      outputDirectory: jobDir,
     };
+
     this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
 
-    this.logger.info(`Starting Video Generation Pipeline Job: ${jobId}`);
-    this.logger.info(`Topic: "${topic}"`);
-    this.logger.info(`Destination: ${jobDir}`);
-
     try {
-      // 1. Research
+      // 1. Deep Research
       job.currentStage = 'RESEARCH';
       job.progressPercent = 15;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
-      const research = await this.researcher.conductResearch(topic);
-      this.saveArtifact(jobDir, ARTIFACT_FILES.RESEARCH, research);
+      const brief = await this.researcher.conductResearch(topic);
+      this.saveArtifact(jobDir, ARTIFACT_FILES.RESEARCH, brief);
 
-      // 2. Scripting
+      // 2. High-Retention Scriptwriting
       job.currentStage = 'SCRIPTING';
       job.progressPercent = 30;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
-      const script = await this.scriptwriter.generateScript(research);
+      const script = await this.scriptwriter.generateScript(brief);
       this.saveArtifact(jobDir, ARTIFACT_FILES.SCRIPT, script);
 
       // 3. Narration (Synthesize master speech via Piper)
@@ -91,19 +92,25 @@ export class VideoPipelineOrchestrator {
       );
       this.saveArtifact(jobDir, ARTIFACT_FILES.NARRATION_JSON, narrationArtifact);
 
-      // Measure per-scene audio durations for precise timing
-      const sceneDurations = script.scenes.map(
-        () => narrationArtifact.durationSeconds / script.scenes.length
+      // 3b. Generate Synchronized Captions
+      const captionsAssPath = getArtifactPath(jobDir, 'CAPTIONS_ASS');
+      const { segments: captions, assPath: captionAssFile } = this.captionEngine.generateCaptions(
+        combinedNarrationText,
+        narrationArtifact.durationSeconds,
+        captionsAssPath
       );
+      this.saveArtifact(jobDir, ARTIFACT_FILES.CAPTIONS_JSON, captions);
 
-      // 4. Scene Planning
+      // 4. Beat-Level Scene Planning
       job.currentStage = 'SCENE_PLANNING';
       job.progressPercent = 55;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
-      const scenePlan = this.scenePlanner.planScenes(script, sceneDurations);
+      // Authoritative duration anchor is the synthesized audio duration
+      const scenePlan = this.scenePlanner.planScenes(script, narrationArtifact.durationSeconds);
+      scenePlan.captions = captions;
       this.saveArtifact(jobDir, ARTIFACT_FILES.SCENE_PLAN, scenePlan);
 
-      // 5. B-Roll Selection & Reframing
+      // 5. Multi-Shot B-Roll Selection & Reframing
       job.currentStage = 'BROLL_SELECTION';
       job.progressPercent = 70;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
@@ -113,18 +120,20 @@ export class VideoPipelineOrchestrator {
       );
       this.saveArtifact(jobDir, ARTIFACT_FILES.BROLL_SELECTION, brollSelections);
 
-      // 6. Timeline Building
+      // 6. Timeline Building (Multi-shot with burned-in caption directives)
       job.currentStage = 'TIMELINE_BUILDING';
       job.progressPercent = 80;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
       const timeline = this.timelineBuilder.buildTimeline(
         scenePlan,
         brollSelections,
-        narrationWavPath
+        narrationWavPath,
+        captions,
+        captionAssFile
       );
       this.saveArtifact(jobDir, ARTIFACT_FILES.TIMELINE, timeline);
 
-      // 7. Video Composite Rendering
+      // 7. Video Composite Rendering (burns in ASS captions, enforces exact audio duration)
       job.currentStage = 'RENDERING';
       job.progressPercent = 90;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
@@ -132,7 +141,7 @@ export class VideoPipelineOrchestrator {
       const renderReport = await this.renderer.render(timeline, finalVideoPath);
       this.saveArtifact(jobDir, ARTIFACT_FILES.RENDER_REPORT, renderReport);
 
-      // 8. Quality Validation
+      // 8. Quality Validation (tight duration tolerance <= 0.4s)
       job.currentStage = 'VALIDATION';
       job.progressPercent = 98;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
@@ -164,12 +173,8 @@ export class VideoPipelineOrchestrator {
     }
   }
 
-  private saveArtifact(jobDir: string, filename: string, data: any) {
-    try {
-      const filePath = path.join(jobDir, filename);
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    } catch (err) {
-      this.logger.warn(`Failed to write artifact ${filename}: ${(err as Error).message}`);
-    }
+  private saveArtifact(jobDir: string, filename: string, data: any): void {
+    const artifactPath = path.join(jobDir, filename);
+    fs.writeFileSync(artifactPath, JSON.stringify(data, null, 2), 'utf-8');
   }
 }

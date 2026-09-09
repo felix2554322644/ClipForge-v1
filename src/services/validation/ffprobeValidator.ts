@@ -7,6 +7,10 @@ import { CONFIG } from '../../config/index';
 export class FfprobeValidator {
   constructor(private logger: PipelineLogger) {}
 
+  /**
+   * Deep validation of rendered MP4 file against authoritative standards.
+   * Enforces strict duration tolerance (<= 0.4s), resolution, audio sync, and framerate.
+   */
   validate(videoPath: string, expectedDuration: number): ValidationResult {
     this.logger.stage('VALIDATION', `Probing and validating output video: ${videoPath}`);
 
@@ -37,7 +41,7 @@ export class FfprobeValidator {
       const audioStream = probe.streams?.find((s: any) => s.codec_type === 'audio');
       const actualDuration = parseFloat(probe.format?.duration || '0');
 
-      // Check 1: Resolution
+      // Check 1: Resolution (strict 1080x1920 portrait)
       const width = videoStream?.width;
       const height = videoStream?.height;
       const validResolution = width === CONFIG.TARGET_WIDTH && height === CONFIG.TARGET_HEIGHT;
@@ -45,21 +49,31 @@ export class FfprobeValidator {
         errors.push(`Invalid resolution: expected ${CONFIG.TARGET_WIDTH}x${CONFIG.TARGET_HEIGHT}, got ${width}x${height}`);
       }
 
-      // Check 2: Audio stream exists
-      const audioSynced = Boolean(audioStream);
+      // Check 2: Audio stream exists and is encoded
+      const audioSynced = Boolean(audioStream && audioStream.sample_rate);
       if (!audioStream) {
         errors.push('Audio stream missing in rendered video');
       }
 
-      // Check 3: Duration match (within 1.5s tolerance)
+      // Check 3: Tight duration match (tolerance: 0.40s)
+      // MP4 muxing with AAC packet boundaries can vary by up to ~0.1-0.2s, but must never drift >0.4s
       const durationDiff = Math.abs(actualDuration - expectedDuration);
-      const durationMatch = durationDiff <= 1.5;
+      const DURATION_TOLERANCE_SECONDS = 0.4;
+      const durationMatch = durationDiff <= DURATION_TOLERANCE_SECONDS;
+
       if (!durationMatch) {
-        warnings.push(`Duration discrepancy: expected ~${expectedDuration.toFixed(1)}s, got ${actualDuration.toFixed(1)}s`);
+        errors.push(
+          `Duration mismatch exceeds strict tolerance (${DURATION_TOLERANCE_SECONDS}s): expected ${expectedDuration.toFixed(2)}s, got ${actualDuration.toFixed(2)}s (diff: ${durationDiff.toFixed(2)}s)`
+        );
+      } else if (durationDiff > 0.25) {
+        warnings.push(`Minor packet quantization duration difference: ${durationDiff.toFixed(2)}s`);
       }
 
       // Check 4: Valid framerate
       const validFramerate = Boolean(videoStream?.r_frame_rate);
+      if (!validFramerate) {
+        errors.push('Video stream lacks valid framerate metadata');
+      }
 
       // Check 5: No stall frames (file size > 100KB)
       const fileSize = fs.statSync(videoPath).size;
@@ -71,6 +85,10 @@ export class FfprobeValidator {
       const isValid = errors.length === 0;
 
       this.logger.info(`Validation result: ${isValid ? 'PASSED ✅' : 'FAILED ❌'}`);
+      this.logger.info(
+        `Duration check: expected=${expectedDuration.toFixed(2)}s, actual=${actualDuration.toFixed(2)}s, diff=${durationDiff.toFixed(3)}s (tolerance: ${DURATION_TOLERANCE_SECONDS}s)`
+      );
+
       if (errors.length > 0) this.logger.error(`Validation errors: ${errors.join(', ')}`);
       if (warnings.length > 0) this.logger.warn(`Validation warnings: ${warnings.join(', ')}`);
 
@@ -84,6 +102,7 @@ export class FfprobeValidator {
           validResolution,
           validFramerate,
           noStallFrames,
+          durationDifference: Math.round(durationDiff * 1000) / 1000,
         },
       };
     } catch (err) {

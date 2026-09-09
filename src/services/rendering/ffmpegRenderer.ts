@@ -9,7 +9,7 @@ export class FfmpegRenderer {
   constructor(private logger: PipelineLogger) {}
 
   async render(timeline: TimelineComposition, outputVideoPath: string): Promise<RenderReport> {
-    this.logger.stage('RENDERING', `Rendering timeline to: ${outputVideoPath}`);
+    this.logger.stage('RENDERING', `Rendering multi-shot timeline to: ${outputVideoPath}`);
     const startTime = Date.now();
 
     const renderDir = path.dirname(outputVideoPath);
@@ -21,9 +21,14 @@ export class FfmpegRenderer {
     const processedCutPaths: string[] = [];
 
     // 1. Prepare each cut segment
-    for (const cut of timeline.cuts) {
-      const cutOut = path.join(cutsDir, `cut_${cut.sceneIndex}.mp4`);
-      this.logger.info(`Processing cut ${cut.sceneIndex} (${cut.durationSeconds}s, motion=${cut.motionEffect})`);
+    for (let i = 0; i < timeline.cuts.length; i++) {
+      const cut = timeline.cuts[i];
+      const cutId = cut.shotId || `cut_${cut.sceneIndex}_${i}`;
+      const cutOut = path.join(cutsDir, `${cutId}.mp4`);
+
+      this.logger.info(
+        `Processing cut ${i + 1}/${timeline.cuts.length} (${cut.durationSeconds.toFixed(2)}s, motion=${cut.motionEffect}, transition=${cut.transition || 'cut'})`
+      );
 
       // Apply motion or trim
       MotionApplier.applyMotion(
@@ -31,13 +36,16 @@ export class FfmpegRenderer {
         cutOut,
         cut.motionEffect,
         cut.durationSeconds,
-        timeline.fps
+        timeline.fps,
+        cut.transition || 'cut',
+        timeline.width,
+        timeline.height
       );
 
       processedCutPaths.push(cutOut);
     }
 
-    // 2. Build FFmpeg concat command
+    // 2. Build FFmpeg concat and caption filter graph
     const inputs: string[] = [];
     let filterGraph = '';
 
@@ -47,16 +55,42 @@ export class FfmpegRenderer {
     });
 
     const concatInputs = processedCutPaths.map((_, idx) => `[v${idx}]`).join('');
-    filterGraph += `${concatInputs}concat=n=${processedCutPaths.length}:v=1:a=0[outv]`;
+
+    const hasCaptions =
+      Boolean(timeline.captionAssPath) &&
+      fs.existsSync(timeline.captionAssPath!) &&
+      fs.statSync(timeline.captionAssPath!).size > 50;
+
+    if (hasCaptions) {
+      const escapedAssPath = timeline.captionAssPath!
+        .replace(/\\/g, '/')
+        .replace(/:/g, '\\:')
+        .replace(/'/g, "\\'");
+
+      filterGraph += `${concatInputs}concat=n=${processedCutPaths.length}:v=1:a=0[vconcat];`;
+      filterGraph += `[vconcat]subtitles='${escapedAssPath}'[outv]`;
+      this.logger.info(`Burning in synchronized captions using ASS filter: ${timeline.captionAssPath}`);
+    } else {
+      filterGraph += `${concatInputs}concat=n=${processedCutPaths.length}:v=1:a=0[outv]`;
+    }
 
     // Master audio input is the last input
     const audioIdx = processedCutPaths.length;
     inputs.push(`-i "${timeline.audioTrackPath}"`);
 
-    const renderCmd = `ffmpeg -y ${inputs.join(' ')} -filter_complex "${filterGraph}" -map "[outv]" -map ${audioIdx}:a -c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a 192k -shortest -movflags +faststart "${outputVideoPath}"`;
+    // Strict duration enforcement matching authoritative narration duration
+    const renderCmd = `ffmpeg -y ${inputs.join(' ')} -filter_complex "${filterGraph}" -map "[outv]" -map ${audioIdx}:a -c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a 192k -t ${timeline.totalDurationSeconds} -shortest -movflags +faststart "${outputVideoPath}"`;
 
-    this.logger.info('Executing final FFmpeg composite render...');
-    execSync(renderCmd, { stdio: 'pipe' });
+    this.logger.info('Executing final FFmpeg composite render with audio sync and burned-in captions...');
+    try {
+      execSync(renderCmd, { stdio: 'pipe' });
+    } catch (err: any) {
+      this.logger.error(`FFmpeg render failed: ${err.message}`);
+      if (err.stderr) {
+        this.logger.error(`FFmpeg stderr: ${err.stderr.toString()}`);
+      }
+      throw new Error(`FFmpeg rendering failed: ${err.message}`);
+    }
 
     if (!fs.existsSync(outputVideoPath) || fs.statSync(outputVideoPath).size === 0) {
       throw new Error(`FFmpeg rendering failed. Output file missing: ${outputVideoPath}`);
@@ -66,7 +100,7 @@ export class FfmpegRenderer {
     const renderTimeMs = Date.now() - startTime;
 
     this.logger.info(
-      `Render completed in ${(renderTimeMs / 1000).toFixed(1)}s, size: ${(stats.size / (1024 * 1024)).toFixed(2)} MB`
+      `Render completed in ${(renderTimeMs / 1000).toFixed(1)}s, size: ${(stats.size / (1024 * 1024)).toFixed(2)} MB (${processedCutPaths.length} shots, captions: ${hasCaptions ? 'BURNED' : 'NONE'})`
     );
 
     return {
@@ -76,6 +110,9 @@ export class FfmpegRenderer {
       renderTimeMs,
       resolution: { width: timeline.width, height: timeline.height },
       fps: timeline.fps,
+      shotCount: processedCutPaths.length,
+      captionCount: timeline.captions?.length || 0,
+      captionsBurnedIn: hasCaptions,
     };
   }
 }

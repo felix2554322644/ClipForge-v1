@@ -9,6 +9,8 @@ export const ARTIFACT_FILES = {
   SCENE_PLAN: 'scene-plan.json',
   BROLL_SELECTION: 'broll-selection.json',
   TIMELINE: 'timeline.json',
+  CAPTIONS_ASS: 'captions.ass',
+  CAPTIONS_JSON: 'captions.json',
   FINAL_VIDEO: 'final-video.mp4',
   RENDER_REPORT: 'render-report.json',
   VALIDATION: 'validation.json',

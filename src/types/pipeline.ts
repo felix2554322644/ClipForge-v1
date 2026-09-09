@@ -29,6 +29,29 @@ export interface NarrationAudioArtifact {
   format: string;
 }
 
+export interface CaptionSegment {
+  id: string;
+  text: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  isEmphasis?: boolean;
+  emphasisWords?: string[];
+}
+
+export interface PlannedShot {
+  id: string;
+  sceneIndex: number;
+  shotIndex: number;
+  narrationClause: string;
+  durationSeconds: number;
+  pacingType: 'fast' | 'normal' | 'establishing';
+  brollQueries: string[];
+  motionEffect: 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static';
+  transition: 'cut' | 'fade' | 'crossfade';
+  captionText: string;
+}
+
 export interface PlannedScene {
   index: number;
   narration: string;
@@ -36,11 +59,24 @@ export interface PlannedScene {
   brollQuery: string[];
   motionEffect: 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static';
   captionText: string;
+  shots?: PlannedShot[];
+  visualThemes?: string[];
 }
 
 export interface ScenePlanOutput {
   totalDurationSeconds: number;
+  totalShots?: number;
   scenes: PlannedScene[];
+  shots?: PlannedShot[];
+  captions?: CaptionSegment[];
+}
+
+export interface BrollScoreBreakdown {
+  resolution: number;
+  aspectRatio: number;
+  durationMatch: number;
+  semantic: number;
+  uniqueness: number;
 }
 
 export interface BrollCandidate {
@@ -53,23 +89,46 @@ export interface BrollCandidate {
   durationSeconds: number;
   relevanceScore: number;
   source: 'pexels' | 'cache' | 'procedural';
+  scoreBreakdown?: BrollScoreBreakdown;
+  selectionReason?: string;
 }
 
-export interface SelectedBrollScene {
+export interface SelectedBrollShot {
+  shotId: string;
   sceneIndex: number;
+  shotIndex: number;
+  queryUsed: string;
   broll: BrollCandidate;
   inPoint: number;
   outPoint: number;
   reframedPath?: string;
+  scoreBreakdown?: BrollScoreBreakdown;
+  selectionReason?: string;
+}
+
+// Backward compatibility alias
+export interface SelectedBrollScene {
+  sceneIndex: number;
+  shotId?: string;
+  shotIndex?: number;
+  broll: BrollCandidate;
+  inPoint: number;
+  outPoint: number;
+  reframedPath?: string;
+  scoreBreakdown?: BrollScoreBreakdown;
+  selectionReason?: string;
 }
 
 export interface TimelineCut {
+  shotId?: string;
   sceneIndex: number;
+  shotIndex?: number;
   videoSourcePath: string;
   inPoint: number;
   outPoint: number;
   durationSeconds: number;
   motionEffect: 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static';
+  transition?: 'cut' | 'fade' | 'crossfade';
   captionText: string;
 }
 
@@ -80,6 +139,8 @@ export interface TimelineComposition {
   totalDurationSeconds: number;
   audioTrackPath: string;
   cuts: TimelineCut[];
+  captions?: CaptionSegment[];
+  captionAssPath?: string;
 }
 
 export interface RenderReport {
@@ -89,6 +150,9 @@ export interface RenderReport {
   renderTimeMs: number;
   resolution: { width: number; height: number };
   fps: number;
+  shotCount?: number;
+  captionCount?: number;
+  captionsBurnedIn?: boolean;
 }
 
 export interface ValidationResult {
@@ -101,5 +165,8 @@ export interface ValidationResult {
     validResolution: boolean;
     validFramerate: boolean;
     noStallFrames: boolean;
+    captionsRendered?: boolean;
+    durationDifference?: number;
+    shotCount?: number;
   };
 }
