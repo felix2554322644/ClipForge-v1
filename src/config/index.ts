@@ -7,6 +7,7 @@ const ROOT_DIR = process.cwd();
 
 export const CONFIG = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+  GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
   PEXELS_API_KEY: process.env.PEXELS_API_KEY || '',
   VIDEO_TOPIC: process.env.VIDEO_TOPIC || 'The Mystery of Deep Space Fast Radio Bursts',
   OUTPUT_DIR: path.resolve(ROOT_DIR, process.env.OUTPUT_DIR || 'artifacts'),

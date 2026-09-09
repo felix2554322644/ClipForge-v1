@@ -6,6 +6,16 @@ import { execSync } from 'node:child_process';
 import { CONFIG } from '../src/config/index';
 import { ARTIFACT_FILES, getArtifactPath } from '../src/contracts/artifacts';
 import { AudioMeasurer } from '../src/services/narration/audioMeasurer';
+import { GeminiClient } from '../src/services/gemini/client';
+
+test('Contracts: Gemini model defaults to gemini-3.6-flash and is centralized', () => {
+  assert.equal(CONFIG.GEMINI_MODEL, process.env.GEMINI_MODEL || 'gemini-3.6-flash');
+  const client = new GeminiClient();
+  assert.equal(client.getModel(), process.env.GEMINI_MODEL || 'gemini-3.6-flash');
+
+  const customClient = new GeminiClient('custom-model-override');
+  assert.equal(customClient.getModel(), 'custom-model-override');
+});
 
 test('Contracts: Piper executable exists and functions', () => {
   assert.ok(fs.existsSync(CONFIG.PIPER_PATH), `Piper executable missing at ${CONFIG.PIPER_PATH}`);
