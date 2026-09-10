@@ -9,6 +9,7 @@ import { PiperNarrationEngine } from '../services/narration/piper';
 import { CaptionEngine } from '../services/captions/captionEngine';
 import { ScenePlanner } from '../services/scenes/planner';
 import { BrollSearcher } from '../services/broll/searcher';
+import { EditorialEngine } from '../services/editorial/editorialEngine';
 import { TimelineBuilder } from '../services/timeline/builder';
 import { FfmpegRenderer } from '../services/rendering/ffmpegRenderer';
 import { FfprobeValidator } from '../services/validation/ffprobeValidator';
@@ -26,6 +27,7 @@ export class VideoPipelineOrchestrator {
   private captionEngine: CaptionEngine;
   private scenePlanner: ScenePlanner;
   private brollSearcher: BrollSearcher;
+  private editorialEngine: EditorialEngine;
   private timelineBuilder: TimelineBuilder;
   private renderer: FfmpegRenderer;
   private validator: FfprobeValidator;
@@ -40,6 +42,7 @@ export class VideoPipelineOrchestrator {
     this.captionEngine = new CaptionEngine(this.logger);
     this.scenePlanner = new ScenePlanner(this.logger);
     this.brollSearcher = new BrollSearcher(this.logger);
+    this.editorialEngine = new EditorialEngine(this.logger);
     this.timelineBuilder = new TimelineBuilder(this.logger);
     this.renderer = new FfmpegRenderer(this.logger);
     this.validator = new FfprobeValidator(this.logger);
@@ -135,16 +138,38 @@ export class VideoPipelineOrchestrator {
       );
       this.saveArtifact(jobDir, ARTIFACT_FILES.BROLL_SELECTION, brollSelections);
 
-      // 6. Timeline Building (Multi-shot with burned-in caption directives)
-      job.currentStage = 'TIMELINE_BUILDING';
-      job.progressPercent = 80;
+      // 5b. Retention-Optimized Editorial Decision Layer
+      job.currentStage = 'EDITORIAL_DECISION';
+      job.progressPercent = 75;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
-      const timeline = this.timelineBuilder.buildTimeline(
+      const editorialPlan = this.editorialEngine.makeEditorialDecisions({
         scenePlan,
         brollSelections,
+        script,
+        totalDurationSeconds: narrationArtifact.durationSeconds,
+        researchBrief: brief,
+        captions,
+      });
+      this.saveArtifact(jobDir, ARTIFACT_FILES.EDITORIAL, editorialPlan);
+
+      // Re-burn ASS captions with editorial moment synchronization
+      const synchronizedAssPath = getArtifactPath(jobDir, 'CAPTIONS_ASS');
+      this.captionEngine.generateCaptions(
+        combinedNarrationText,
+        narrationArtifact.durationSeconds,
+        synchronizedAssPath,
+        editorialPlan
+      );
+
+      // 6. Timeline Building (Multi-shot with burned-in caption directives & editorial decisions)
+      job.currentStage = 'TIMELINE_BUILDING';
+      job.progressPercent = 82;
+      this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
+      const timeline = this.timelineBuilder.buildTimelineFromEditorial(
+        editorialPlan,
         narrationWavPath,
         captions,
-        captionAssFile
+        synchronizedAssPath
       );
       job.duration = timeline.totalDurationSeconds;
       this.saveArtifact(jobDir, ARTIFACT_FILES.TIMELINE, timeline);
@@ -166,6 +191,14 @@ export class VideoPipelineOrchestrator {
 
       if (!validation.isValid) {
         throw new Error(`Quality validation failed: ${validation.errors.join(', ')}`);
+      }
+
+      // 8b. Export single production deliverable (PART 12: final MP4 only)
+      const productionMp4Path = path.join(CONFIG.OUTPUT_DIR, ARTIFACT_FILES.PRODUCTION_MP4);
+      fs.copyFileSync(finalVideoPath, productionMp4Path);
+      const jobProductionPath = getArtifactPath(jobDir, 'PRODUCTION_MP4');
+      if (jobProductionPath !== productionMp4Path) {
+        fs.copyFileSync(finalVideoPath, jobProductionPath);
       }
 
       job.status = 'COMPLETED';
@@ -192,5 +225,19 @@ export class VideoPipelineOrchestrator {
   private saveArtifact(jobDir: string, filename: string, data: any): void {
     const artifactPath = path.join(jobDir, filename);
     fs.writeFileSync(artifactPath, JSON.stringify(data, null, 2), 'utf-8');
+  }
+
+  /**
+   * Packages the production deliverable containing ONLY the final rendered MP4.
+   * Eliminates all intermediate json, wav, cut fragments, and downloaded b-roll.
+   */
+  exportProductionDeliverable(finalVideoPath: string, destinationDir?: string): string {
+    const targetDir = destinationDir || path.join(CONFIG.OUTPUT_DIR, 'dist');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    const targetPath = path.join(targetDir, ARTIFACT_FILES.PRODUCTION_MP4);
+    fs.copyFileSync(finalVideoPath, targetPath);
+    return targetPath;
   }
 }

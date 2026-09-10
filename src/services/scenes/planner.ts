@@ -84,11 +84,11 @@ export class ScenePlanner {
         index: scene.index,
         narration: scene.narration,
         durationSeconds: computedSceneDuration,
-        brollQuery: scene.suggestedKeywords,
+        brollQuery: scene.suggestedKeywords || [],
         motionEffect: rawShots[0]?.motionEffect || 'zoom_in',
         captionText: scene.narration,
         shots: rawShots,
-        visualThemes: scene.suggestedKeywords,
+        visualThemes: scene.suggestedKeywords || [],
       };
     });
 
@@ -227,9 +227,11 @@ export class ScenePlanner {
     }
 
     // Blend with scene's suggested keywords
-    for (const kw of scene.suggestedKeywords) {
-      if (!queries.includes(kw)) {
-        queries.push(kw);
+    if (scene.suggestedKeywords && Array.isArray(scene.suggestedKeywords)) {
+      for (const kw of scene.suggestedKeywords) {
+        if (!queries.includes(kw)) {
+          queries.push(kw);
+        }
       }
     }
 

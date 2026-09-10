@@ -1,3 +1,5 @@
+import { EditorialMotion, EditorialTransition } from './editorial';
+
 export interface ResearchBrief {
   topic: string;
   hook: string;
@@ -10,14 +12,22 @@ export interface ResearchBrief {
 export interface ScriptScene {
   index: number;
   narration: string;
-  visualDescription: string;
-  suggestedKeywords: string[];
+  visualDescription?: string;
+  suggestedKeywords?: string[];
   approxDurationSeconds?: number;
+  brollKeyword?: string;
+  durationSeconds?: number;
+  type?: string;
 }
 
 export interface ScriptOutput {
-  title: string;
-  totalEstimatedSeconds: number;
+  title?: string;
+  totalEstimatedSeconds?: number;
+  estimatedDurationSeconds?: number;
+  hook?: string;
+  coreMystery?: string;
+  payoff?: string;
+  closingCall?: string;
   scenes: ScriptScene[];
 }
 
@@ -45,11 +55,13 @@ export interface PlannedShot {
   shotIndex: number;
   narrationClause: string;
   durationSeconds: number;
-  pacingType: 'fast' | 'normal' | 'establishing';
+  pacingType?: 'fast' | 'normal' | 'establishing';
   brollQueries: string[];
-  motionEffect: 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static';
-  transition: 'cut' | 'fade' | 'crossfade';
-  captionText: string;
+  searchQuery?: string;
+  visualDescription?: string;
+  motionEffect: EditorialMotion | 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static';
+  transition: EditorialTransition | 'cut' | 'fade' | 'crossfade';
+  captionText?: string;
 }
 
 export interface PlannedScene {
@@ -57,7 +69,7 @@ export interface PlannedScene {
   narration: string;
   durationSeconds: number;
   brollQuery: string[];
-  motionEffect: 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static';
+  motionEffect: EditorialMotion | 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static';
   captionText: string;
   shots?: PlannedShot[];
   visualThemes?: string[];
@@ -165,8 +177,8 @@ export interface TimelineCut {
   inPoint: number;
   outPoint: number;
   durationSeconds: number;
-  motionEffect: 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static';
-  transition?: 'cut' | 'fade' | 'crossfade';
+  motionEffect: EditorialMotion | 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static';
+  transition?: EditorialTransition | 'cut' | 'fade' | 'crossfade';
   captionText: string;
 }
 
@@ -208,3 +220,5 @@ export interface ValidationResult {
     shotCount?: number;
   };
 }
+
+export * from './editorial';

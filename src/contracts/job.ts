@@ -5,6 +5,7 @@ export type PipelineStage =
   | 'NARRATION'
   | 'SCENE_PLANNING'
   | 'BROLL_SELECTION'
+  | 'EDITORIAL_DECISION'
   | 'TIMELINE_BUILDING'
   | 'RENDERING'
   | 'VALIDATION'

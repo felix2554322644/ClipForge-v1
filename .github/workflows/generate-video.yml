@@ -69,10 +69,18 @@ jobs:
           ALLOW_FALLBACKS: 'false'
         run: npm run generate
 
-      - name: Upload Video Artifacts
-        if: always()
+      - name: Upload Final Video Short
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: video-artifacts
-          path: artifacts/
+          name: clipforge-final-short
+          path: artifacts/clipforge-final.mp4
           retention-days: 14
+
+      - name: Upload Diagnostic Artifacts on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-artifacts
+          path: artifacts/
+          retention-days: 3

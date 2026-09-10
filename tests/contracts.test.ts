@@ -48,6 +48,9 @@ test('Contracts: Artifact files mapping matches specification', () => {
 });
 
 test('Contracts: Piper speech synthesis produces valid measurable audio', () => {
+  if (!fs.existsSync(CONFIG.CACHE_DIR)) {
+    fs.mkdirSync(CONFIG.CACHE_DIR, { recursive: true });
+  }
   const outWav = path.join(CONFIG.CACHE_DIR, `test_speech_${Date.now()}.wav`);
   try {
     execSync(`echo "Audio contract test passed." | "${CONFIG.PIPER_PATH}" --model "${CONFIG.PIPER_MODEL_PATH}" --output_file "${outWav}"`, {

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { CaptionSegment, CaptionTheme } from '../../types/pipeline';
+import { CaptionSegment, CaptionTheme, EditorialPlan } from '../../types/pipeline';
 import { PipelineLogger } from '../logging/logger';
 
 export const DEFAULT_CAPTION_THEME: CaptionTheme = {
@@ -29,11 +29,13 @@ export class CaptionEngine {
   /**
    * Generates synchronized short-form social captions (TikTok/Reels/Shorts style)
    * with word-level emphasis and burns them into an ASS subtitle file.
+   * Can optionally synchronize styles with an EditorialPlan.
    */
   generateCaptions(
     narrationText: string,
     totalDurationSeconds: number,
-    outputAssPath?: string
+    outputAssPath?: string,
+    editorialPlan?: EditorialPlan
   ): { segments: CaptionSegment[]; assPath?: string } {
     this.logger?.stage(
       'CAPTIONS',
@@ -94,7 +96,7 @@ export class CaptionEngine {
     // Write ASS file if path provided
     let assPath: string | undefined;
     if (outputAssPath) {
-      assPath = this.writeAssFile(segments, outputAssPath);
+      assPath = this.writeAssFile(segments, outputAssPath, editorialPlan);
       this.logger?.info(
         `Social caption file burned with ${segments.length} phrase chunks: ${assPath}`
       );
@@ -250,7 +252,11 @@ export class CaptionEngine {
    * Generates and writes ASS subtitle file with modern social short-form typography,
    * safe-zone margin, accent color pop, and subtle entry animation.
    */
-  private writeAssFile(segments: CaptionSegment[], outPath: string): string {
+  private writeAssFile(
+    segments: CaptionSegment[],
+    outPath: string,
+    editorialPlan?: EditorialPlan
+  ): string {
     const dir = path.dirname(outPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -263,8 +269,8 @@ export class CaptionEngine {
       outlineColor,
       outlineWidth,
       shadowDepth,
-      emphasisColor,
-      emphasisScalePercent,
+      emphasisColor: defaultEmphasisColor,
+      emphasisScalePercent: defaultScalePercent,
       marginVertical,
       animationFadeMs,
     } = this.theme;
@@ -284,9 +290,48 @@ Style: SocialCaptions,${fontName},${fontSize},${primaryColor},&H000000FF,${outli
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
 
+    // Map cumulative shot time windows if editorial plan is present
+    const shotWindows: { start: number; end: number; treatment: string }[] = [];
+    if (editorialPlan && editorialPlan.decisions.length > 0) {
+      let t = 0;
+      for (const d of editorialPlan.decisions) {
+        shotWindows.push({
+          start: t,
+          end: t + d.durationSeconds,
+          treatment: d.captionTreatment || 'standard',
+        });
+        t += d.durationSeconds;
+      }
+    }
+
     const events = segments.map((seg) => {
       const start = this.formatAssTime(seg.startTime);
       const end = this.formatAssTime(seg.endTime);
+
+      let activeTreatment = 'standard';
+      if (shotWindows.length > 0) {
+        const matched = shotWindows.find(
+          (w) => seg.startTime >= w.start - 0.1 && seg.startTime < w.end
+        );
+        if (matched) activeTreatment = matched.treatment;
+      }
+
+      let activeEmphasisColor = defaultEmphasisColor;
+      let activeScale = defaultScalePercent;
+
+      if (activeTreatment === 'hook_pop') {
+        activeEmphasisColor = '&H0000E6FF&'; // Vibrant Golden Yellow
+        activeScale = 116;
+      } else if (activeTreatment === 'statistic_callout') {
+        activeEmphasisColor = '&H00FFFF00&'; // Electric Cyan
+        activeScale = 114;
+      } else if (activeTreatment === 'reveal_pop') {
+        activeEmphasisColor = '&H0033E6FF&'; // Radiant Amber
+        activeScale = 115;
+      } else if (activeTreatment === 'payoff_impact') {
+        activeEmphasisColor = '&H0000FF66&'; // Neon Green
+        activeScale = 116;
+      }
 
       let text = seg.text;
 
@@ -296,7 +341,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
           const regex = new RegExp(`\\b(${emp})\\b`, 'i');
           text = text.replace(
             regex,
-            `{\\c${emphasisColor}\\b1\\fscx${emphasisScalePercent}\\fscy${emphasisScalePercent}}$1{\\c${primaryColor}\\b1\\fscx100\\fscy100}`
+            `{\\c${activeEmphasisColor}\\b1\\fscx${activeScale}\\fscy${activeScale}}$1{\\c${primaryColor}\\b1\\fscx100\\fscy100}`
           );
         }
       }

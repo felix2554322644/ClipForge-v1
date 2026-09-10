@@ -30,7 +30,7 @@ export class FfmpegRenderer {
         `Processing cut ${i + 1}/${timeline.cuts.length} (${cut.durationSeconds.toFixed(2)}s, motion=${cut.motionEffect}, transition=${cut.transition || 'cut'})`
       );
 
-      // Apply motion or trim
+      // Apply motion, trim, and inPoint offset
       MotionApplier.applyMotion(
         cut.videoSourcePath,
         cutOut,
@@ -39,7 +39,8 @@ export class FfmpegRenderer {
         timeline.fps,
         cut.transition || 'cut',
         timeline.width,
-        timeline.height
+        timeline.height,
+        cut.inPoint || 0
       );
 
       processedCutPaths.push(cutOut);
