@@ -40,7 +40,9 @@ export class FfmpegRenderer {
         cut.transition || 'cut',
         timeline.width,
         timeline.height,
-        cut.inPoint || 0
+        cut.inPoint || 0,
+        cut.cropMode || 'standard',
+        cut.motionIntensity || 'moderate'
       );
 
       processedCutPaths.push(cutOut);
@@ -52,7 +54,7 @@ export class FfmpegRenderer {
 
     processedCutPaths.forEach((p, idx) => {
       inputs.push(`-i "${p}"`);
-      filterGraph += `[${idx}:v]scale=${timeline.width}:${timeline.height}:force_original_aspect_ratio=decrease,pad=${timeline.width}:${timeline.height}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${idx}];`;
+      filterGraph += `[${idx}:v]scale=${timeline.width}:${timeline.height}:force_original_aspect_ratio=decrease,pad=${timeline.width}:${timeline.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${timeline.fps}[v${idx}];`;
     });
 
     const concatInputs = processedCutPaths.map((_, idx) => `[v${idx}]`).join('');
@@ -69,10 +71,10 @@ export class FfmpegRenderer {
         .replace(/'/g, "\\'");
 
       filterGraph += `${concatInputs}concat=n=${processedCutPaths.length}:v=1:a=0[vconcat];`;
-      filterGraph += `[vconcat]subtitles='${escapedAssPath}'[outv]`;
+      filterGraph += `[vconcat]subtitles='${escapedAssPath}',fps=${timeline.fps}[outv]`;
       this.logger.info(`Burning in synchronized captions using ASS filter: ${timeline.captionAssPath}`);
     } else {
-      filterGraph += `${concatInputs}concat=n=${processedCutPaths.length}:v=1:a=0[outv]`;
+      filterGraph += `${concatInputs}concat=n=${processedCutPaths.length}:v=1:a=0,fps=${timeline.fps}[outv]`;
     }
 
     // Master audio input is the last input
@@ -80,7 +82,7 @@ export class FfmpegRenderer {
     inputs.push(`-i "${timeline.audioTrackPath}"`);
 
     // Strict duration enforcement matching authoritative narration duration
-    const renderCmd = `ffmpeg -y ${inputs.join(' ')} -filter_complex "${filterGraph}" -map "[outv]" -map ${audioIdx}:a -c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a 192k -t ${timeline.totalDurationSeconds} -shortest -movflags +faststart "${outputVideoPath}"`;
+    const renderCmd = `ffmpeg -y ${inputs.join(' ')} -filter_complex "${filterGraph}" -map "[outv]" -map ${audioIdx}:a -c:v libx264 -preset veryfast -crf 22 -c:a aac -b:a 192k -t ${timeline.totalDurationSeconds} -r ${timeline.fps} -shortest -movflags +faststart "${outputVideoPath}"`;
 
     this.logger.info('Executing final FFmpeg composite render with audio sync and burned-in captions...');
     try {

@@ -69,10 +69,18 @@ export class FfprobeValidator {
         warnings.push(`Minor packet quantization duration difference: ${durationDiff.toFixed(2)}s`);
       }
 
-      // Check 4: Valid framerate
-      const validFramerate = Boolean(videoStream?.r_frame_rate);
-      if (!validFramerate) {
+      // Check 4: Valid framerate normalized to target FPS (30 FPS)
+      const rFrameRate = videoStream?.r_frame_rate || '';
+      const avgFrameRate = videoStream?.avg_frame_rate || '';
+      const targetFpsFrac = `${CONFIG.TARGET_FPS}/1`;
+      const isTargetFps = rFrameRate === targetFpsFrac || avgFrameRate === targetFpsFrac;
+      const validFramerate = Boolean(rFrameRate) && isTargetFps;
+      if (!rFrameRate) {
         errors.push('Video stream lacks valid framerate metadata');
+      } else if (!isTargetFps) {
+        errors.push(
+          `Framerate mismatch: expected ${targetFpsFrac} (${CONFIG.TARGET_FPS} FPS), got r_frame_rate=${rFrameRate}, avg_frame_rate=${avgFrameRate}`
+        );
       }
 
       // Check 5: No stall frames (file size > 100KB)

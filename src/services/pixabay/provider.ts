@@ -23,7 +23,7 @@ export class PixabayProvider implements BrollProvider {
     }
 
     try {
-      const hits = await this.client.searchVideos(query, 12);
+      const hits = await this.client.searchVideos(query, 15);
       const normalized: NormalizedBrollVideo[] = [];
 
       for (const hit of hits) {

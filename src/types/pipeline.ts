@@ -1,4 +1,4 @@
-import { EditorialMotion, EditorialTransition } from './editorial';
+import { EditorialMotion, EditorialTransition, CropMode } from './editorial';
 
 export interface ResearchBrief {
   topic: string;
@@ -113,6 +113,7 @@ export interface BrollCandidate {
   scoreBreakdown?: BrollScoreBreakdown;
   selectionReason?: string;
   queryUsed?: string;
+  sourceUrl?: string;
 }
 
 export interface SelectedBrollShot {
@@ -127,6 +128,7 @@ export interface SelectedBrollShot {
   sourceAspectRatio?: number;
   cropRequired?: boolean;
   cropAmount?: number;
+  sourceUrl?: string;
   broll: BrollCandidate;
   inPoint: number;
   outPoint: number;
@@ -148,6 +150,7 @@ export interface SelectedBrollScene {
   cropRequired?: boolean;
   cropAmount?: number;
   queryUsed?: string;
+  sourceUrl?: string;
   broll: BrollCandidate;
   inPoint: number;
   outPoint: number;
@@ -180,6 +183,8 @@ export interface TimelineCut {
   motionEffect: EditorialMotion | 'zoom_in' | 'zoom_out' | 'pan_left' | 'pan_right' | 'static';
   transition?: EditorialTransition | 'cut' | 'fade' | 'crossfade';
   captionText: string;
+  cropMode?: CropMode;
+  motionIntensity?: 'subtle' | 'moderate' | 'dramatic';
 }
 
 export interface TimelineComposition {

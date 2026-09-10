@@ -38,7 +38,11 @@ export class PexelsClient {
     return Boolean(this.apiKey);
   }
 
-  async searchVideos(query: string, orientation: 'portrait' | 'landscape' = 'portrait'): Promise<PexelsVideoItem[]> {
+  async searchVideos(
+    query: string,
+    orientation: 'portrait' | 'landscape' = 'portrait',
+    perPage = 15
+  ): Promise<PexelsVideoItem[]> {
     if (!this.apiKey) {
       if (!CONFIG.ALLOW_FALLBACKS) {
         throw new Error('Pexels API key is not configured and fallbacks are disabled.');
@@ -46,7 +50,7 @@ export class PexelsClient {
       return [];
     }
 
-    const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&orientation=${orientation}&per_page=5`;
+    const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&orientation=${orientation}&per_page=${perPage}`;
     const res = await fetch(url, {
       headers: {
         Authorization: this.apiKey,

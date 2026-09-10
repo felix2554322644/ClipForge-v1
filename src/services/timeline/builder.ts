@@ -39,6 +39,8 @@ export class TimelineBuilder {
       motionEffect: d.motionEffect,
       transition: d.transition,
       captionText: d.narrationClause,
+      cropMode: d.cropMode,
+      motionIntensity: d.motionIntensity,
     }));
 
     const calculatedTotalDuration =

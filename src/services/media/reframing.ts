@@ -21,9 +21,9 @@ export class VideoReframer {
 
     // Scale to fill target dimensions while maintaining aspect ratio, then crop center
     // scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920
-    const filter = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},setsar=1`;
+    const filter = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},setsar=1,fps=${CONFIG.TARGET_FPS}`;
 
-    const cmd = `ffmpeg -y -i "${inputVideoPath}" -vf "${filter}" -c:v libx264 -preset ultrafast -crf 23 -an "${outputVideoPath}"`;
+    const cmd = `ffmpeg -y -i "${inputVideoPath}" -vf "${filter}" -c:v libx264 -preset ultrafast -crf 23 -r ${CONFIG.TARGET_FPS} -an "${outputVideoPath}"`;
 
     execSync(cmd, { stdio: 'pipe' });
 

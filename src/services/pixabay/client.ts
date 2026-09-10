@@ -47,7 +47,7 @@ export class PixabayClient {
    * Searches Pixabay Video API for footage matching the query.
    * Safe with rate-limit handling and never exposes the API key in logs.
    */
-  async searchVideos(query: string, perPage = 10): Promise<PixabayVideoHit[]> {
+  async searchVideos(query: string, perPage = 15): Promise<PixabayVideoHit[]> {
     if (!this.isAvailable()) {
       return [];
     }
