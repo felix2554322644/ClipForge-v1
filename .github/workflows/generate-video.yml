@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       topic:
-        description: 'Topic for the generated vertical video'
+        description: 'Topic for the generated vertical video (leave blank for automatic fresh topic generation)'
         required: false
-        default: 'The Mystery of Deep Space Fast Radio Bursts'
+        default: ''
   push:
     branches:
       - main
@@ -43,6 +43,14 @@ jobs:
           restore-keys: |
             piper-${{ runner.os }}-${{ runner.arch }}-
 
+      - name: Cache Topic Rotation State
+        uses: actions/cache@v4
+        with:
+          path: topics/topic-state.json
+          key: topic-state-${{ github.run_id }}
+          restore-keys: |
+            topic-state-
+
       - name: Setup Piper TTS Runtime & Voice Models
         run: bash scripts/setup-piper.sh
 
@@ -65,7 +73,7 @@ jobs:
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.6-flash' }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          VIDEO_TOPIC: ${{ github.event.inputs.topic || 'The Mystery of Deep Space Fast Radio Bursts' }}
+          VIDEO_TOPIC: ${{ github.event.inputs.topic || '' }}
           ALLOW_FALLBACKS: 'false'
         run: npm run generate
 

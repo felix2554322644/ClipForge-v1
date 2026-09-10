@@ -2,11 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CONFIG } from '../../config/index';
 import { PipelineLogger } from '../logging/logger';
+import { GeminiClient } from '../gemini/client';
 
 export interface TopicItem {
   id: string;
   category: string;
   topic: string;
+  hookAngle?: string;
 }
 
 export interface TopicsData {
@@ -17,46 +19,61 @@ export interface TopicRotationState {
   lastSelectedTopicId?: string;
   lastSelectedTopic?: string;
   recentlyUsedIds: string[];
+  recentlyUsedTopics: string[];
   currentIndex: number;
   updatedAt: string;
 }
 
 export interface ResolvedTopic {
   topic: string;
-  mode: 'EXPLICIT' | 'ROTATION';
+  mode: 'EXPLICIT' | 'ROTATION' | 'GENERATED';
   topicId?: string;
   category?: string;
+  hookAngle?: string;
+}
+
+export interface TopicManagerOptions {
+  topicsFilePath?: string;
+  stateFilePath?: string;
+  geminiClient?: GeminiClient;
+  logger?: PipelineLogger;
+  enableGemini?: boolean;
 }
 
 export class TopicManager {
   private topicsFilePath: string;
   private stateFilePath: string;
+  private geminiClient?: GeminiClient;
   private logger?: PipelineLogger;
+  private enableGemini: boolean;
 
-  constructor(options?: {
-    topicsFilePath?: string;
-    stateFilePath?: string;
-    logger?: PipelineLogger;
-  }) {
+  constructor(options?: TopicManagerOptions) {
     this.topicsFilePath = options?.topicsFilePath || CONFIG.TOPICS_FILE;
     this.stateFilePath = options?.stateFilePath || CONFIG.TOPIC_STATE_FILE;
+    this.geminiClient = options?.geminiClient;
     this.logger = options?.logger;
+    this.enableGemini = options?.enableGemini !== false;
   }
 
   /**
-   * Resolves the topic according to user input or topic pool rotation.
-   * Mode 1: Explicit topic if supplied.
-   * Mode 2: Deterministic rotation from topics.json avoiding recent duplicates.
+   * Sets or replaces the Gemini client used for topic generation.
    */
-  resolveTopic(rawTopicInput?: string): ResolvedTopic {
+  setGeminiClient(client: GeminiClient): void {
+    this.geminiClient = client;
+  }
+
+  /**
+   * Resolves the video topic according to manual input, AI generation, or deterministic rotation.
+   * Mode 1: EXPLICIT if manual topic is provided.
+   * Mode 2: GENERATED via Gemini (single targeted prompt with recent avoidance).
+   * Mode 3: ROTATION from topics pool if Gemini is unavailable or fails.
+   */
+  async resolveTopic(rawTopicInput?: string): Promise<ResolvedTopic> {
     const trimmedInput = (rawTopicInput || '').trim();
 
-    const isExplicit =
-      trimmedInput !== '' &&
-      trimmedInput.toLowerCase() !== 'automatic' &&
-      trimmedInput.toLowerCase() !== 'auto';
-
-    if (isExplicit) {
+    // 1. Explicit topic provided
+    if (this.isExplicitTopic(trimmedInput)) {
+      this.recordExplicitTopic(trimmedInput);
       this.logTopicSelection('EXPLICIT', trimmedInput);
       return {
         topic: trimmedInput,
@@ -64,7 +81,123 @@ export class TopicManager {
       };
     }
 
-    // Automatic topic rotation
+    // 2. Try Gemini topic generation if enabled and available
+    if (this.enableGemini && this.geminiClient && this.geminiClient.isAvailable()) {
+      try {
+        const generated = await this.generateTopicWithGemini();
+        if (generated) {
+          return generated;
+        }
+      } catch (err) {
+        if (this.logger) {
+          this.logger.warn(
+            `Gemini topic generation failed: ${(err as Error).message}. Falling back to deterministic rotation.`
+          );
+        }
+      }
+    }
+
+    // 3. Deterministic rotation fallback from curated local pool
+    return this.resolveFromPool();
+  }
+
+  /**
+   * Synchronous topic resolution using local pool rotation (useful for sync callers and offline tests).
+   */
+  resolveTopicSync(rawTopicInput?: string): ResolvedTopic {
+    const trimmedInput = (rawTopicInput || '').trim();
+    if (this.isExplicitTopic(trimmedInput)) {
+      this.recordExplicitTopic(trimmedInput);
+      this.logTopicSelection('EXPLICIT', trimmedInput);
+      return {
+        topic: trimmedInput,
+        mode: 'EXPLICIT',
+      };
+    }
+
+    return this.resolveFromPool();
+  }
+
+  /**
+   * Generates a fresh, high-retention short-form video topic using Gemini.
+   * Ensures minimal API usage (single request) and passes recent topics to prevent repetition.
+   */
+  private async generateTopicWithGemini(): Promise<ResolvedTopic | null> {
+    if (!this.geminiClient) return null;
+
+    const state = this.loadState();
+    const recentTopics = (state.recentlyUsedTopics || []).slice(-12);
+    const recentAvoidText =
+      recentTopics.length > 0
+        ? `\nPREVIOUSLY USED TOPICS TO AVOID (DO NOT REPEAT OR CLOSELY PARAPHRASE):\n${recentTopics.map((t) => `- "${t}"`).join('\n')}`
+        : '';
+
+    const prompt = `You are an elite short-form video creator producing viral, high-retention 30-60 second educational shorts (YouTube Shorts / TikTok / Reels).
+Generate ONE fresh, compelling video topic.
+
+CRITERIA:
+1. High viral curiosity gap: A mindbending question, counter-intuitive fact, or high-stakes mystery that hooks viewers within 2 seconds.
+2. Domain: Astronomy, extreme physics, deep biology mysteries, hidden technology, ancient engineering, or strange natural phenomena.
+3. Title: 6 to 12 words, title case, clear and arresting (e.g. "Why Time Moves Slower at Earth's Core", "The Impossible Physics of Rogue Ocean Waves", "How Whales Survive Depths That Crush Submarines").
+4. Substance: Must have clear factual depth and an intriguing revelation suitable for a 30-60s script.
+${recentAvoidText}
+
+Respond ONLY with valid, raw JSON matching this schema:
+{
+  "topic": "The exact video topic title",
+  "category": "Science" | "Technology" | "History" | "Nature" | "Space",
+  "hookAngle": "One-sentence provocative hook question or observation"
+}`;
+
+    const parsed = await this.geminiClient.generateJson<{
+      topic?: string;
+      category?: string;
+      hookAngle?: string;
+    }>(prompt);
+
+    if (!parsed || !parsed.topic || typeof parsed.topic !== 'string') {
+      return null;
+    }
+
+    const cleanTopic = parsed.topic.trim().replace(/^["']|["']$/g, '');
+    if (cleanTopic.length < 8 || cleanTopic.length > 120) {
+      return null;
+    }
+
+    // Verify it is not an immediate duplicate of a recent topic
+    const recentSet = new Set((state.recentlyUsedTopics || []).map((t) => t.toLowerCase().trim()));
+    if (recentSet.has(cleanTopic.toLowerCase())) {
+      if (this.logger) {
+        this.logger.warn(`Gemini proposed duplicate topic "${cleanTopic}". Falling back to pool.`);
+      }
+      return null;
+    }
+
+    // Persist to state
+    state.lastSelectedTopic = cleanTopic;
+    state.lastSelectedTopicId = undefined;
+    state.recentlyUsedTopics = state.recentlyUsedTopics || [];
+    state.recentlyUsedTopics.push(cleanTopic);
+    if (state.recentlyUsedTopics.length > 25) {
+      state.recentlyUsedTopics = state.recentlyUsedTopics.slice(-25);
+    }
+    state.updatedAt = new Date().toISOString();
+    this.saveState(state);
+
+    this.logTopicSelection('GENERATED', cleanTopic);
+
+    return {
+      topic: cleanTopic,
+      mode: 'GENERATED',
+      category: parsed.category || 'Science',
+      hookAngle: parsed.hookAngle,
+    };
+  }
+
+  /**
+   * Deterministically rotates through the local curated topic pool, avoiding recently used topics.
+   */
+  resolveFromPool(providedState?: TopicRotationState): ResolvedTopic {
     const pool = this.loadTopics();
     if (!pool || pool.length === 0) {
       const fallback = 'The Mystery of Deep Space Fast Radio Bursts';
@@ -75,30 +208,54 @@ export class TopicManager {
       };
     }
 
-    const state = this.loadState();
+    const state = providedState || this.loadState();
+    const recentIdSet = new Set(state.recentlyUsedIds || []);
+    const recentTopicSet = new Set(
+      (state.recentlyUsedTopics || []).map((t) => t.toLowerCase().trim())
+    );
 
-    // Find candidates not recently used
-    // Keep recentlyUsedIds bounded to half the pool or at most pool.length - 1
-    const maxRecentMemory = Math.max(1, Math.floor(pool.length / 2));
-    const recentSet = new Set(state.recentlyUsedIds.slice(-maxRecentMemory));
+    // Sequential search starting after the previous selection
+    const startIndex =
+      typeof state.currentIndex === 'number' && state.currentIndex >= 0
+        ? (state.currentIndex + 1) % pool.length
+        : 0;
 
-    let candidate = pool.find((t) => !recentSet.has(t.id));
+    let candidate: TopicItem | undefined;
+    let candidateIndex = -1;
 
-    // If all topics are in the recent set (or pool exhausted), reset and take next in sequence
-    if (!candidate) {
-      const nextIndex = (state.currentIndex + 1) % pool.length;
-      candidate = pool[nextIndex];
-      state.recentlyUsedIds = [candidate.id];
-      state.currentIndex = nextIndex;
-    } else {
-      const candidateIndex = pool.findIndex((t) => t.id === candidate!.id);
-      state.currentIndex = candidateIndex >= 0 ? candidateIndex : (state.currentIndex + 1) % pool.length;
-      state.recentlyUsedIds.push(candidate.id);
-      if (state.recentlyUsedIds.length > maxRecentMemory * 2) {
-        state.recentlyUsedIds = state.recentlyUsedIds.slice(-maxRecentMemory);
+    for (let i = 0; i < pool.length; i++) {
+      const checkIdx = (startIndex + i) % pool.length;
+      const item = pool[checkIdx];
+      const isIdRecent = recentIdSet.has(item.id);
+      const isTopicRecent = recentTopicSet.has(item.topic.toLowerCase().trim());
+
+      if (!isIdRecent && !isTopicRecent) {
+        candidate = item;
+        candidateIndex = checkIdx;
+        break;
       }
     }
 
+    // If all topics in the pool have been used in the current cycle, cycle forward and reset memory
+    if (!candidate) {
+      candidateIndex = startIndex;
+      candidate = pool[candidateIndex];
+      state.recentlyUsedIds = [candidate.id];
+      // Retain the immediately preceding topic in memory to avoid 2 identical consecutive runs
+      const lastTopic = state.lastSelectedTopic;
+      state.recentlyUsedTopics = lastTopic ? [lastTopic, candidate.topic] : [candidate.topic];
+    } else {
+      state.recentlyUsedIds.push(candidate.id);
+      state.recentlyUsedTopics.push(candidate.topic);
+      if (state.recentlyUsedIds.length > pool.length) {
+        state.recentlyUsedIds = state.recentlyUsedIds.slice(-Math.floor(pool.length / 2));
+      }
+      if (state.recentlyUsedTopics.length > 25) {
+        state.recentlyUsedTopics = state.recentlyUsedTopics.slice(-25);
+      }
+    }
+
+    state.currentIndex = candidateIndex;
     state.lastSelectedTopicId = candidate.id;
     state.lastSelectedTopic = candidate.topic;
     state.updatedAt = new Date().toISOString();
@@ -111,7 +268,39 @@ export class TopicManager {
       mode: 'ROTATION',
       topicId: candidate.id,
       category: candidate.category,
+      hookAngle: candidate.hookAngle,
     };
+  }
+
+  /**
+   * Checks if an input represents an explicit user-supplied topic.
+   */
+  private isExplicitTopic(raw?: string): boolean {
+    if (!raw) return false;
+    const trimmed = raw.trim().toLowerCase();
+    return (
+      trimmed !== '' &&
+      trimmed !== 'automatic' &&
+      trimmed !== 'auto' &&
+      trimmed !== 'default'
+    );
+  }
+
+  /**
+   * Records an explicit topic in recent memory to prevent immediate duplication on future automatic runs.
+   */
+  private recordExplicitTopic(topic: string): void {
+    const state = this.loadState();
+    state.lastSelectedTopic = topic;
+    state.recentlyUsedTopics = state.recentlyUsedTopics || [];
+    if (!state.recentlyUsedTopics.includes(topic)) {
+      state.recentlyUsedTopics.push(topic);
+      if (state.recentlyUsedTopics.length > 25) {
+        state.recentlyUsedTopics = state.recentlyUsedTopics.slice(-25);
+      }
+    }
+    state.updatedAt = new Date().toISOString();
+    this.saveState(state);
   }
 
   loadTopics(): TopicItem[] {
@@ -125,25 +314,49 @@ export class TopicManager {
       }
     } catch (err) {
       if (this.logger) {
-        this.logger.warn(`Failed reading topics file from ${this.topicsFilePath}: ${(err as Error).message}`);
+        this.logger.warn(
+          `Failed reading topics file from ${this.topicsFilePath}: ${(err as Error).message}`
+        );
       }
     }
 
+    // Curated fallback pool of engaging vertical video topics
     return [
       {
         id: 'science_frb',
         category: 'Science',
         topic: 'The Mystery of Deep Space Fast Radio Bursts',
+        hookAngle: 'Mysterious radio pulses from deep space repeating with mathematical precision',
       },
       {
         id: 'science_black_holes',
         category: 'Science',
         topic: 'What Happens Inside a Black Hole',
+        hookAngle: 'Where space and time swap places and physics breaks completely',
+      },
+      {
+        id: 'science_neutron_stars',
+        category: 'Science',
+        topic: 'Why Neutron Stars Are So Strange',
+        hookAngle: 'A single teaspoon of this star weighs as much as Mount Everest',
       },
       {
         id: 'tech_ai_learning',
         category: 'Technology',
         topic: 'How Artificial Intelligence Actually Learns',
+        hookAngle: 'How silicon chips learn to recognize faces and speak like humans',
+      },
+      {
+        id: 'nature_octopus_camouflage',
+        category: 'Nature',
+        topic: 'How Octopuses Instantly Change Color',
+        hookAngle: 'Creatures with three hearts that turn invisible in two hundred milliseconds',
+      },
+      {
+        id: 'nature_deep_sea_vents',
+        category: 'Nature',
+        topic: 'The Alien Creatures of Deep Sea Hydrothermal Vents',
+        hookAngle: 'Monsters living in boiling toxic water with zero sunlight',
       },
     ];
   }
@@ -157,6 +370,9 @@ export class TopicManager {
           lastSelectedTopicId: parsed.lastSelectedTopicId,
           lastSelectedTopic: parsed.lastSelectedTopic,
           recentlyUsedIds: Array.isArray(parsed.recentlyUsedIds) ? parsed.recentlyUsedIds : [],
+          recentlyUsedTopics: Array.isArray(parsed.recentlyUsedTopics)
+            ? parsed.recentlyUsedTopics
+            : [],
           currentIndex: typeof parsed.currentIndex === 'number' ? parsed.currentIndex : 0,
           updatedAt: parsed.updatedAt || new Date().toISOString(),
         };
@@ -167,6 +383,7 @@ export class TopicManager {
 
     return {
       recentlyUsedIds: [],
+      recentlyUsedTopics: [],
       currentIndex: 0,
       updatedAt: new Date().toISOString(),
     };
@@ -196,7 +413,7 @@ export class TopicManager {
     }
   }
 
-  private logTopicSelection(mode: 'EXPLICIT' | 'ROTATION', topic: string): void {
+  private logTopicSelection(mode: 'EXPLICIT' | 'ROTATION' | 'GENERATED', topic: string): void {
     console.log(`TOPIC MODE: ${mode}`);
     console.log(`SELECTED TOPIC: ${topic}`);
     if (this.logger) {

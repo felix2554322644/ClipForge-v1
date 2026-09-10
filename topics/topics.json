@@ -3,82 +3,98 @@
     {
       "id": "science_frb",
       "category": "Science",
-      "topic": "The Mystery of Deep Space Fast Radio Bursts"
+      "topic": "The Mystery of Deep Space Fast Radio Bursts",
+      "hookAngle": "Mysterious radio signals from deep space repeating with mathematical precision"
     },
     {
       "id": "science_black_holes",
       "category": "Science",
-      "topic": "What Happens Inside a Black Hole"
+      "topic": "What Happens Inside a Black Hole",
+      "hookAngle": "Where space and time swap places and physics breaks down completely"
     },
     {
       "id": "science_neutron_stars",
       "category": "Science",
-      "topic": "Why Neutron Stars Are So Strange"
+      "topic": "Why Neutron Stars Are So Strange",
+      "hookAngle": "A single teaspoon of this stellar remnant weighs as much as Mount Everest"
     },
     {
       "id": "science_jwst",
       "category": "Science",
-      "topic": "How the James Webb Telescope Sees Distant Galaxies"
+      "topic": "How the James Webb Telescope Sees Distant Galaxies",
+      "hookAngle": "A golden mirror orbiting a million miles from Earth looking backward in time"
     },
     {
       "id": "science_dark_matter",
       "category": "Science",
-      "topic": "What We Know About Dark Matter"
+      "topic": "What We Know About Dark Matter",
+      "hookAngle": "85 percent of the universe's mass is completely invisible to our telescopes"
     },
     {
       "id": "tech_ai_learning",
       "category": "Technology",
-      "topic": "How Artificial Intelligence Actually Learns"
+      "topic": "How Artificial Intelligence Actually Learns",
+      "hookAngle": "Billions of synthetic neurons tuning math equations to generate human speech"
     },
     {
       "id": "tech_microchips",
       "category": "Technology",
-      "topic": "Why Computer Chips Keep Getting Smaller"
+      "topic": "Why Computer Chips Keep Getting Smaller",
+      "hookAngle": "Etching billions of transistors onto silicon using extreme ultraviolet laser beams"
     },
     {
       "id": "tech_gps",
       "category": "Technology",
-      "topic": "How GPS Satellites Know Where You Are"
+      "topic": "How GPS Satellites Know Where You Are",
+      "hookAngle": "Atomic clocks ticking in orbit that must adjust for Einstein's relativity every day"
     },
     {
       "id": "tech_quantum_computing",
       "category": "Technology",
-      "topic": "What Quantum Computers Are Trying to Solve"
+      "topic": "What Quantum Computers Are Trying to Solve",
+      "hookAngle": "Subatomic qubits existing in multiple parallel states to solve centuries-old problems"
     },
     {
       "id": "history_atlantis",
       "category": "History",
-      "topic": "The Mystery Behind the Lost City of Atlantis"
+      "topic": "The Mystery Behind the Lost City of Atlantis",
+      "hookAngle": "Did Plato describe a philosophical allegory or a cataclysmic real-world tsunami?"
     },
     {
       "id": "history_roman_aqueducts",
       "category": "History",
-      "topic": "How the Roman Empire Built Unstoppable Aqueducts"
+      "topic": "How the Roman Empire Built Unstoppable Aqueducts",
+      "hookAngle": "Sloping channels dropping mere inches per mile to carry millions of gallons of water"
     },
     {
       "id": "history_transcontinental_railroad",
       "category": "History",
-      "topic": "The Story of the First Transcontinental Railroad"
+      "topic": "The Story of the First Transcontinental Railroad",
+      "hookAngle": "Blasting solid granite through blizzard winters to connect two coasts with iron"
     },
     {
       "id": "nature_octopus_camouflage",
       "category": "Nature",
-      "topic": "How Octopuses Instantly Change Color"
+      "topic": "How Octopuses Instantly Change Color",
+      "hookAngle": "Intelligent shape-shifters with three hearts changing textures in 200 milliseconds"
     },
     {
       "id": "nature_lightning_strikes",
       "category": "Nature",
-      "topic": "Why Lightning Strikes From the Ground Up"
+      "topic": "Why Lightning Strikes From the Ground Up",
+      "hookAngle": "Invisible upward streamers meeting downward stepped leaders at 200,000 miles per hour"
     },
     {
       "id": "nature_whale_communication",
       "category": "Nature",
-      "topic": "How Whales Communicate Across Entire Oceans"
+      "topic": "How Whales Communicate Across Entire Oceans",
+      "hookAngle": "Deep ocean acoustic channels carrying complex songs across four thousand miles"
     },
     {
       "id": "nature_deep_sea_vents",
       "category": "Nature",
-      "topic": "The Alien Creatures of Deep Sea Hydrothermal Vents"
+      "topic": "The Alien Creatures of Deep Sea Hydrothermal Vents",
+      "hookAngle": "Tubeworms surviving near boiling acidic vents with zero sunlight and toxic sulfur"
     }
   ]
 }

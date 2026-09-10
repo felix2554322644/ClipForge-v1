@@ -35,7 +35,9 @@ export class VideoPipelineOrchestrator {
   constructor(geminiClient?: GeminiClient, topicManager?: TopicManager) {
     this.logger = new PipelineLogger();
     this.gemini = geminiClient || new GeminiClient();
-    this.topicManager = topicManager || new TopicManager({ logger: this.logger });
+    this.topicManager =
+      topicManager ||
+      new TopicManager({ logger: this.logger, geminiClient: this.gemini });
     this.researcher = new ResearchService(this.gemini, this.logger);
     this.scriptwriter = new ScriptwriterService(this.gemini, this.logger);
     this.narrationEngine = new PiperNarrationEngine(this.logger);
@@ -53,7 +55,7 @@ export class VideoPipelineOrchestrator {
     outputDirectory?: string,
     options?: { duration?: number; profile?: string }
   ): Promise<PipelineJob> {
-    const resolved = this.topicManager.resolveTopic(topicInput);
+    const resolved = await this.topicManager.resolveTopic(topicInput);
     const activeTopic = resolved.topic;
     const topicMode = resolved.mode;
 

@@ -16,7 +16,7 @@ export interface PipelineJob {
   id: string;
   jobId?: string;
   topic: string;
-  topicMode?: 'EXPLICIT' | 'ROTATION';
+  topicMode?: 'EXPLICIT' | 'ROTATION' | 'GENERATED';
   duration?: number;
   profile?: string;
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
