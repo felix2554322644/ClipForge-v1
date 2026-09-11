@@ -3,6 +3,7 @@ import {
   CandidateBrollAsset,
   CaptionTreatmentType,
   CropMode,
+  EditorialChapter,
   EditorialDecision,
   EditorialMotion,
   EditorialPlan,
@@ -12,6 +13,7 @@ import {
   PatternInterruptType,
 } from '../../types/editorial';
 import { getFormatProfile } from './profiles';
+import { VisualIntelligenceService } from './visualIntelligence';
 
 const VALID_ROLES: Set<EditorialRole> = new Set([
   'hook',
@@ -148,6 +150,26 @@ export class AIDirectorValidator {
         candidateId = candidate ? candidate.id : `proc_${shotId}`;
       }
 
+      // Consecutive identical candidate asset check:
+      // Prevent the exact same asset from being cut to in consecutive shots if alternatives exist
+      const prevDecision = sanitizedDecisions[sanitizedDecisions.length - 1];
+      if (prevDecision && prevDecision.selectedCandidateId === candidateId && candidates.length > 1) {
+        const alternative =
+          candidates.find(
+            (c) => c.id !== candidateId && (!usedCandidateCounts.has(c.id) || usedCandidateCounts.get(c.id)! === 0)
+          ) || candidates.find((c) => c.id !== candidateId);
+
+        if (alternative) {
+          this.issues.push({
+            field: `decisions[${idx}].selectedCandidateId`,
+            issue: `Consecutive identical candidate asset "${candidateId}" detected`,
+            actionTaken: `Switched to alternative candidate "${alternative.id}" to prevent visual repetition`,
+          });
+          candidate = alternative;
+          candidateId = alternative.id;
+        }
+      }
+
       // Duplicate asset reuse check: If candidate is reused, check interval availability
       const existingIntervals = usedIntervals.get(candidateId) || [];
       const timesUsed = usedCandidateCounts.get(candidateId) || 0;
@@ -169,6 +191,34 @@ export class AIDirectorValidator {
         }
       }
 
+      // Provider run limit check: prevent one provider from dominating without variety
+      const maxProviderRun = formatProfile.repetitionThresholds?.maxConsecutiveSameProvider || 3;
+      if (sanitizedDecisions.length >= maxProviderRun && candidate) {
+        const lastN = sanitizedDecisions.slice(-maxProviderRun);
+        const currentCandidate = candidate;
+        const allSameProvider = lastN.every((d) => {
+          const prior = candidateMap.get(d.selectedCandidateId || '');
+          return prior && prior.provider === currentCandidate.provider;
+        });
+
+        if (allSameProvider) {
+          const altProviderCandidate =
+            candidates.find(
+              (c) => c.provider !== currentCandidate.provider && !usedCandidateCounts.has(c.id)
+            ) || candidates.find((c) => c.provider !== currentCandidate.provider);
+
+          if (altProviderCandidate) {
+            this.issues.push({
+              field: `decisions[${idx}].selectedCandidateId`,
+              issue: `Provider "${currentCandidate.provider}" exceeded ${maxProviderRun} consecutive cuts`,
+              actionTaken: `Switched to candidate "${altProviderCandidate.id}" (${altProviderCandidate.provider}) for provider diversity`,
+            });
+            candidate = altProviderCandidate;
+            candidateId = altProviderCandidate.id;
+          }
+        }
+      }
+
       usedCandidateCounts.set(candidateId, (usedCandidateCounts.get(candidateId) || 0) + 1);
 
       // 3. Duration Clamping
@@ -183,8 +233,8 @@ export class AIDirectorValidator {
         Math.min(formatProfile.shotDurationRange.max, rawDuration)
       );
 
-      // Enforce hook maximum constraint in short-form
-      if (isHook && formatProfile.format === 'short') {
+      // Enforce hook maximum constraint
+      if (isHook) {
         clampedDuration = Math.min(clampedDuration, formatProfile.hookDurationMax);
       }
 
@@ -248,6 +298,15 @@ export class AIDirectorValidator {
         cropMode = 'standard';
       }
 
+      // Prevent 3 consecutive identical crop modes to ensure framing variety
+      if (sanitizedDecisions.length >= 2) {
+        const p1 = sanitizedDecisions[sanitizedDecisions.length - 1];
+        const p2 = sanitizedDecisions[sanitizedDecisions.length - 2];
+        if (p1.cropMode === cropMode && p2.cropMode === cropMode) {
+          cropMode = cropMode === 'standard' ? 'punch_in' : 'standard';
+        }
+      }
+
       let transition: EditorialTransition = raw.transition;
       if (!VALID_TRANSITIONS.has(transition)) {
         transition = 'cut';
@@ -287,6 +346,26 @@ export class AIDirectorValidator {
           ? Math.round(raw.pacingWeight * 100) / 100
           : 1.0;
 
+      // 10. Visual description and contrast notes
+      const visRef = candidate?.visualReference || (candidate ? VisualIntelligenceService.evaluateVisualReference(candidate) : undefined);
+      const visualDescription =
+        typeof raw.visualDescription === 'string' && raw.visualDescription.trim().length > 0
+          ? raw.visualDescription.trim()
+          : visRef?.visualDescription;
+
+      let visualContrastNote: string | undefined =
+        typeof raw.visualContrastNote === 'string' && raw.visualContrastNote.trim().length > 0
+          ? raw.visualContrastNote.trim()
+          : undefined;
+
+      if (!visualContrastNote && sanitizedDecisions.length > 0 && candidate) {
+        const priorCand = candidateMap.get(sanitizedDecisions[sanitizedDecisions.length - 1].selectedCandidateId || '');
+        if (priorCand) {
+          const contrast = VisualIntelligenceService.evaluateVisualContrast(priorCand, candidate);
+          visualContrastNote = contrast.editorialNote;
+        }
+      }
+
       sanitizedDecisions.push({
         shotId,
         sceneIndex,
@@ -307,30 +386,54 @@ export class AIDirectorValidator {
         patternInterrupt,
         editorialReason,
         pacingWeight,
+        visualDescription,
+        visualContrastNote,
       });
     }
 
-    // 10. Duration Normalization: Sum must match targetDurationSeconds exactly
+    // 11. Duration Normalization: Sum must match targetDurationSeconds exactly
     this.normalizeTotalDuration(
       sanitizedDecisions,
       targetDuration,
       formatProfile.shotDurationRange.max
     );
 
-    // 11. Variety & Pacing Metrics Computation
+    // 12. Variety & Pacing Metrics Computation
     const rapidShotsCount = sanitizedDecisions.filter((d) => d.durationSeconds <= 1.8).length;
     const holdsCount = sanitizedDecisions.filter((d) => d.durationSeconds >= 3.0).length;
     const staticHoldsCount = sanitizedDecisions.filter((d) => d.motionEffect === 'static').length;
     const patternInterruptCount = sanitizedDecisions.filter((d) => !!d.patternInterrupt).length;
     const uniqueMotions = new Set(sanitizedDecisions.map((d) => d.motionEffect)).size;
+    const uniqueCandidates = new Set(sanitizedDecisions.map((d) => d.selectedCandidateId)).size;
+    const candidateVarietyRatio = sanitizedDecisions.length > 0 ? uniqueCandidates / sanitizedDecisions.length : 1.0;
 
     const varietyScore = Math.min(
       100,
-      Math.round((uniqueMotions / 5) * 60 + (staticHoldsCount > 0 ? 25 : 0) + (patternInterruptCount > 0 ? 15 : 0))
+      Math.round(
+        (uniqueMotions / 5) * 50 +
+          candidateVarietyRatio * 30 +
+          (staticHoldsCount > 0 ? 10 : 0) +
+          (patternInterruptCount > 0 ? 10 : 0)
+      )
     );
+
+    // Visual Continuity Score (0-100)
+    const repetitionPenalties = this.issues.filter((i) => i.issue.includes('repetition') || i.issue.includes('duplicate')).length;
+    const visualContinuityScore = Math.max(50, Math.min(100, Math.round(85 + (uniqueCandidates >= 3 ? 15 : 0) - repetitionPenalties * 5)));
+
+    // Composition Variety Score (0-100)
+    const uniqueCrops = new Set(sanitizedDecisions.map((d) => d.cropMode)).size;
+    const compositionVarietyScore = Math.min(100, Math.round((uniqueCrops / 3) * 60 + candidateVarietyRatio * 40));
+
+    // 13. Chapters for Long-Form
+    let chapters: EditorialChapter[] | undefined;
+    if (formatProfile.format === 'long' || input.format === 'long') {
+      chapters = this.buildLongFormChapters(sanitizedDecisions, input);
+    }
 
     const plan: EditorialPlan = {
       totalDurationSeconds: Math.round(targetDuration * 100) / 100,
+      format: formatProfile.format,
       decisions: sanitizedDecisions,
       pacingBreakdown: {
         hookDuration: sanitizedDecisions[0]?.durationSeconds || 0,
@@ -341,14 +444,93 @@ export class AIDirectorValidator {
         staticHoldsCount,
       },
       varietyScore,
+      visualContinuityScore,
+      compositionVarietyScore,
+      repetitionPenalties,
       patternInterruptCount,
+      chapters,
       editorialNarrativeArc:
         typeof rawPlan.editorialNarrativeArc === 'string'
           ? rawPlan.editorialNarrativeArc
+          : formatProfile.format === 'long'
+          ? 'Cinematic chapter-based narrative arc with progressive escalation and deep conceptual holds'
           : 'Retention-optimized narrative arc with hook-reveal-payoff structure',
     };
 
     return plan;
+  }
+
+  /**
+   * Builds structured chapters for long-form video editorial plans.
+   */
+  private buildLongFormChapters(
+    decisions: EditorialDecision[],
+    input: AIDirectorInput
+  ): EditorialChapter[] {
+    if (decisions.length === 0) return [];
+
+    // If input already defined chapters, map decisions to them
+    if (input.chapters && input.chapters.length > 0) {
+      let currentShot = 0;
+      let currentTime = 0;
+
+      return input.chapters.map((ch, idx) => {
+        const startShot = currentShot;
+        const startTime = currentTime;
+        let chapterDuration = 0;
+
+        while (currentShot < decisions.length && (currentTime < ch.approxEndTime || idx === input.chapters!.length - 1)) {
+          chapterDuration += decisions[currentShot].durationSeconds;
+          currentTime += decisions[currentShot].durationSeconds;
+          currentShot++;
+        }
+
+        return {
+          chapterIndex: idx + 1,
+          title: ch.title,
+          startShotIndex: startShot,
+          endShotIndex: Math.max(startShot, currentShot - 1),
+          startTime: Math.round(startTime * 100) / 100,
+          endTime: Math.round(currentTime * 100) / 100,
+          durationSeconds: Math.round(chapterDuration * 100) / 100,
+          visualTheme: decisions[startShot]?.visualDescription || 'Thematic chapter progression',
+          pacingStyle: idx === 0 ? 'engaging hook' : 'narrative hold',
+        };
+      });
+    }
+
+    // Otherwise segment decisions into logical 3-chapter arc
+    const chapterCount = Math.max(2, Math.min(4, Math.ceil(decisions.length / 3)));
+    const shotsPerChapter = Math.ceil(decisions.length / chapterCount);
+    const chapterTitles = ['Opening Foundation', 'Core Revelation & Escalation', 'Climax & Synthesis', 'Final Payoff'];
+
+    const chapters: EditorialChapter[] = [];
+    let currentTime = 0;
+
+    for (let c = 0; c < chapterCount; c++) {
+      const startIdx = c * shotsPerChapter;
+      const endIdx = Math.min(decisions.length - 1, (c + 1) * shotsPerChapter - 1);
+      if (startIdx > endIdx) break;
+
+      const chapterShots = decisions.slice(startIdx, endIdx + 1);
+      const chapterDuration = chapterShots.reduce((acc, s) => acc + s.durationSeconds, 0);
+
+      chapters.push({
+        chapterIndex: c + 1,
+        title: chapterTitles[c] || `Chapter ${c + 1}`,
+        startShotIndex: startIdx,
+        endShotIndex: endIdx,
+        startTime: Math.round(currentTime * 100) / 100,
+        endTime: Math.round((currentTime + chapterDuration) * 100) / 100,
+        durationSeconds: Math.round(chapterDuration * 100) / 100,
+        visualTheme: decisions[startIdx]?.visualDescription || 'Thematic chapter progression',
+        pacingStyle: c === 0 ? 'hook and premise' : c === chapterCount - 1 ? 'dramatic conclusion' : 'deep explanation hold',
+      });
+
+      currentTime += chapterDuration;
+    }
+
+    return chapters;
   }
 
   /**

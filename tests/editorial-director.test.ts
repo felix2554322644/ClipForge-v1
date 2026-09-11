@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AIDirectorService } from '../src/services/editorial/director';
 import { AIDirectorValidator } from '../src/services/editorial/validator';
+import { VisualIntelligenceService } from '../src/services/editorial/visualIntelligence';
 import {
   CLIPFORGE_NICHE_PROFILE,
   SHORT_FORM_PROFILE,
@@ -767,3 +768,204 @@ test('AI Editorial Director Profiles: validates short-form vs long-form threshol
     `Long-form shot duration was ${longPlan.decisions[0].durationSeconds}, expected >= 5.0`
   );
 });
+
+// 12. VisualIntelligenceService: heuristic evaluations & contrast calculation
+test('VisualIntelligenceService: computes composition, movement, lighting, and contrast', () => {
+  const macroCandidate = createMockCandidate({
+    id: 'c_microchip',
+    provider: 'pexels',
+    tags: ['microchip', 'circuit', 'macro', 'electronic', 'close-up'],
+    semanticDescription: 'Macro extreme close-up of computer microprocessor circuits',
+    thumbnailUrl: 'https://example.com/macro_thumb.jpg',
+    width: 1080,
+    height: 1920,
+    relevanceScore: 95,
+  });
+
+  const wideCandidate = createMockCandidate({
+    id: 'c_galaxy_wide',
+    provider: 'pixabay',
+    tags: ['space', 'galaxy', 'vista', 'stars', 'deep space', 'cosmic'],
+    semanticDescription: 'Ultra-wide panoramic aerial vista of spiraling galaxy in dark cosmos',
+    thumbnailUrl: 'https://example.com/galaxy_thumb.jpg',
+    width: 1920,
+    height: 1080,
+    relevanceScore: 90,
+  });
+
+  const macroRef = VisualIntelligenceService.evaluateVisualReference(macroCandidate);
+  assert.equal(macroRef.composition, 'macro');
+  assert.ok(
+    ['microchip', 'technology', 'circuit'].includes(macroRef.dominantSubject),
+    `Dominant subject was ${macroRef.dominantSubject}`
+  );
+  assert.ok(macroRef.visualDescription.toLowerCase().includes('macro'));
+  assert.ok(macroRef.aestheticScore >= 70);
+
+  const wideRef = VisualIntelligenceService.evaluateVisualReference(wideCandidate);
+  assert.ok(
+    ['wide', 'aerial', 'extreme_wide'].includes(wideRef.composition),
+    `Composition was ${wideRef.composition}`
+  );
+  assert.ok(
+    ['space', 'galaxy', 'deep space'].includes(wideRef.dominantSubject),
+    `Dominant subject was ${wideRef.dominantSubject}`
+  );
+
+  // Compute visual contrast between macro technology and wide space
+  const contrast = VisualIntelligenceService.evaluateVisualContrast(macroCandidate, wideCandidate);
+  assert.ok(
+    contrast.overallContrastScore >= 50,
+    `Expected high visual contrast, got score: ${contrast.overallContrastScore}`
+  );
+  assert.ok(contrast.compositionContrastScore >= 70, 'Expected composition contrast >= 70');
+  assert.equal(contrast.hasSubjectRepetition, false, 'Expected no subject repetition');
+
+  // Test scroll-stopping hook scoring for short form
+  const hookPotential = VisualIntelligenceService.scoreScrollStopPotential(macroCandidate);
+  assert.ok(hookPotential >= 60, `Expected strong scroll stop potential, got ${hookPotential}`);
+});
+
+// 13. Repetition Awareness: Validator detects and resolves consecutive identical asset reuse
+test('AI Editorial Director Validator: detects and prevents consecutive identical asset repetition', () => {
+  const validator = new AIDirectorValidator();
+  const c1 = createMockCandidate({ id: 'candidate_alpha', durationSeconds: 10.0 });
+  const c2 = createMockCandidate({ id: 'candidate_beta', durationSeconds: 10.0 });
+  const board = createMockBoard([c1, c2]);
+
+  const input: AIDirectorInput = {
+    format: 'short',
+    targetDurationSeconds: 6.0,
+    narrationText: 'Testing anti-repetition guards.',
+    narrationDurationSeconds: 6.0,
+    candidateBoard: board,
+  };
+
+  // Raw decision payload proposes candidate_alpha twice consecutively
+  const rawDecisions = {
+    totalDurationSeconds: 6.0,
+    decisions: [
+      {
+        shotId: 'shot_1',
+        selectedCandidateId: 'candidate_alpha',
+        inPoint: 0,
+        outPoint: 3.0,
+        durationSeconds: 3.0,
+        role: 'hook',
+      },
+      {
+        shotId: 'shot_2',
+        selectedCandidateId: 'candidate_alpha', // Duplicate consecutive asset!
+        inPoint: 3.0,
+        outPoint: 6.0,
+        durationSeconds: 3.0,
+        role: 'fact',
+      },
+    ],
+  };
+
+  const plan = validator.validateAndSanitize(rawDecisions, input);
+  assert.ok(plan);
+  assert.equal(plan.decisions.length, 2);
+
+  // Second shot must be remapped to candidate_beta to break consecutive duplicate
+  assert.equal(plan.decisions[0].selectedCandidateId, 'candidate_alpha');
+  assert.equal(plan.decisions[1].selectedCandidateId, 'candidate_beta');
+
+  // Check validator issues logged the repetition fix
+  const issues = validator.getIssues();
+  const repetitionFix = issues.find((i) => i.issue.toLowerCase().includes('consecutive identical'));
+  assert.ok(repetitionFix, 'Expected issue for consecutive identical asset resolution');
+});
+
+// 14. Dual-Format Long-form Chapters: builds structured chapters with pacing themes
+test('Dual-Format Long-form Chapters: builds structured chapters with pacing themes', () => {
+  const validator = new AIDirectorValidator();
+  const candidates = [
+    createMockCandidate({ id: 'c1', durationSeconds: 15.0 }),
+    createMockCandidate({ id: 'c2', durationSeconds: 15.0 }),
+    createMockCandidate({ id: 'c3', durationSeconds: 15.0 }),
+    createMockCandidate({ id: 'c4', durationSeconds: 15.0 }),
+  ];
+  const board = createMockBoard(candidates);
+
+  const longInput: AIDirectorInput = {
+    format: 'long',
+    targetDurationSeconds: 40.0,
+    narrationText: 'A detailed 40-second long-form exploration of astrophysics across multiple scenes.',
+    narrationDurationSeconds: 40.0,
+    candidateBoard: board,
+    scenePlan: {
+      totalDurationSeconds: 40.0,
+      scenes: [
+        { index: 0, narration: 'Chapter 1 Hook', durationSeconds: 10.0, brollQuery: ['stars'], motionEffect: 'punch_in', captionText: 'Chapter 1 Hook' },
+        { index: 1, narration: 'Chapter 2 Core Concept', durationSeconds: 10.0, brollQuery: ['nebula'], motionEffect: 'zoom_in', captionText: 'Chapter 2 Core Concept' },
+        { index: 2, narration: 'Chapter 3 Deep Analysis', durationSeconds: 10.0, brollQuery: ['galaxy'], motionEffect: 'pan_left', captionText: 'Chapter 3 Deep Analysis' },
+        { index: 3, narration: 'Chapter 4 Conclusion', durationSeconds: 10.0, brollQuery: ['space'], motionEffect: 'zoom_out', captionText: 'Chapter 4 Conclusion' },
+      ],
+    },
+  };
+
+  const rawDecisions = {
+    totalDurationSeconds: 40.0,
+    decisions: [
+      { shotId: 's1', selectedCandidateId: 'c1', durationSeconds: 5.0, inPoint: 0, outPoint: 5.0 },
+      { shotId: 's2', selectedCandidateId: 'c2', durationSeconds: 5.0, inPoint: 0, outPoint: 5.0 },
+      { shotId: 's3', selectedCandidateId: 'c3', durationSeconds: 6.0, inPoint: 0, outPoint: 6.0 },
+      { shotId: 's4', selectedCandidateId: 'c4', durationSeconds: 6.0, inPoint: 0, outPoint: 6.0 },
+      { shotId: 's5', selectedCandidateId: 'c1', durationSeconds: 6.0, inPoint: 5.0, outPoint: 11.0 },
+      { shotId: 's6', selectedCandidateId: 'c2', durationSeconds: 6.0, inPoint: 5.0, outPoint: 11.0 },
+      { shotId: 's7', selectedCandidateId: 'c3', durationSeconds: 6.0, inPoint: 6.0, outPoint: 12.0 },
+    ],
+  };
+
+  const plan = validator.validateAndSanitize(rawDecisions, longInput);
+  assert.ok(plan);
+  assert.equal(plan.format, 'long');
+  assert.ok(plan.chapters && plan.chapters.length >= 2, 'Expected at least 2 long-form chapters');
+
+  // Verify chapter structure
+  const firstChapter = plan.chapters[0];
+  assert.equal(firstChapter.chapterIndex, 1);
+  assert.equal(firstChapter.startTime, 0);
+  assert.ok(firstChapter.durationSeconds > 0);
+  assert.ok(Boolean(firstChapter.visualTheme && firstChapter.visualTheme.length > 0));
+  assert.equal(firstChapter.pacingStyle, 'hook and premise');
+});
+
+// 15. Director Prompt: embeds visual candidate intelligence and thumbnails
+test('Director Prompt: embeds visual looks, composition, movement, and thumbnails', () => {
+  const director = new AIDirectorService();
+  const c1 = createMockCandidate({
+    id: 'c_mars_orbit',
+    tags: ['mars', 'planet', 'aerial', 'red', 'cinematic'],
+    thumbnailUrl: 'https://images.pexels.com/mars_thumb.jpg',
+    previewUrl: 'https://images.pexels.com/mars_prev.mp4',
+    semanticDescription: 'Cinematic wide orbit over the Martian craters',
+  });
+  const board = createMockBoard([c1]);
+
+  const input: AIDirectorInput = {
+    format: 'short',
+    targetDurationSeconds: 15.0,
+    narrationText: 'Journey to the Red Planet.',
+    narrationDurationSeconds: 15.0,
+    candidateBoard: board,
+  };
+
+  const prompt = director.buildDirectorPrompt(
+    input,
+    CLIPFORGE_NICHE_PROFILE,
+    SHORT_FORM_PROFILE
+  );
+
+  // Verify visual metadata is included in prompt
+  assert.ok(prompt.includes('visualLook'), 'Prompt must include visualLook');
+  assert.ok(prompt.includes('composition'), 'Prompt must include composition');
+  assert.ok(prompt.includes('movement'), 'Prompt must include movement');
+  assert.ok(prompt.includes('thumbnailUrl'), 'Prompt must include thumbnailUrl');
+  assert.ok(prompt.includes('https://images.pexels.com/mars_thumb.jpg'), 'Prompt must include specific thumbnail');
+  assert.ok(prompt.includes('SHORT-FORM'), 'Prompt must include format-specific section');
+  assert.ok(prompt.includes('ANTI-REPETITION'), 'Prompt must include anti-repetition rules');
+});
+

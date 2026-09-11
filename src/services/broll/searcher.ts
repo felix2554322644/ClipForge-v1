@@ -8,6 +8,7 @@ import { BrollScorer, ScorerEvaluation } from './scorer';
 import { BrollCache } from './cache';
 import { VideoReframer } from '../media/reframing';
 import { EditingPrimitives } from '../media/primitives';
+import { VisualIntelligenceService } from '../editorial/visualIntelligence';
 import {
   BrollCandidate,
   BrollProviderName,
@@ -628,6 +629,20 @@ export class BrollSearcher {
 
               seenCandidateKeys.add(candidateKey);
 
+              const visRef = VisualIntelligenceService.evaluateVisualReference({
+                provider: item.provider,
+                tags: item.tags,
+                queryUsed: query,
+                semanticDescription: `${item.provider.toUpperCase()} candidate matching "${query}"`,
+                thumbnailUrl: item.thumbnailUrl,
+                previewUrl: item.previewUrl,
+                width: item.width,
+                height: item.height,
+                aspectRatio: item.aspectRatio,
+                nativeVertical: item.nativeVertical,
+                relevanceScore: evaluation.score,
+              });
+
               candidates.push({
                 id: candidateKey,
                 provider: item.provider,
@@ -643,8 +658,11 @@ export class BrollSearcher {
                 queryUsed: query,
                 targetSceneIndex: sceneIndex,
                 targetShotId: shot.id,
+                thumbnailUrl: item.thumbnailUrl,
+                previewUrl: item.previewUrl,
                 relevanceScore: evaluation.score,
                 semanticDescription: `${item.provider.toUpperCase()} candidate matching "${query}" (Score: ${evaluation.score}, ${evaluation.reason})`,
+                visualReference: visRef,
               });
             }
           } catch (err: any) {
@@ -658,6 +676,18 @@ export class BrollSearcher {
       if (!seenCandidateKeys.has(procId)) {
         seenCandidateKeys.add(procId);
         const theme = initialQueries[0] || 'space galaxy';
+        const procVis = VisualIntelligenceService.evaluateVisualReference({
+          provider: 'procedural',
+          tags: [theme, 'procedural', 'synthesized', 'motion graphics'],
+          queryUsed: theme,
+          semanticDescription: `Procedurally synthesized vertical motion graphics for theme "${theme}"`,
+          width: CONFIG.TARGET_WIDTH,
+          height: CONFIG.TARGET_HEIGHT,
+          aspectRatio: CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
+          nativeVertical: true,
+          relevanceScore: 70,
+        });
+
         candidates.push({
           id: procId,
           provider: 'procedural',
@@ -674,6 +704,7 @@ export class BrollSearcher {
           targetShotId: shot.id,
           relevanceScore: 70,
           semanticDescription: `Procedurally generated 1080x1920 vertical visual for theme "${theme}"`,
+          visualReference: procVis,
         });
       }
     }

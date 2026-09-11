@@ -38,12 +38,23 @@ export const SHORT_FORM_PROFILE: FormatEditorialProfile = {
   allowFrequentVisualChanges: true,
   captionTreatmentIntensity: 'high',
   motionPreference: 'dynamic',
+  visualHoldMaxDuration: 3.6,
+  repetitionThresholds: {
+    maxConsecutiveSameProvider: 2,
+    minShotsBeforeSubjectReuse: 3,
+    requireCompositionContrast: true,
+  },
+  narrativeStructure: {
+    useChapters: false,
+    scrollStopHookRequired: true,
+  },
   guidelines: [
     '9:16 vertical orientation optimized for TikTok, YouTube Shorts, and Reels',
     'Fast curiosity-driven pacing (average shot length 1.5s - 2.8s)',
-    'Strong opening hook (< 2.8s) designed to stop viewer scroll instantly',
-    'Frequent meaningful visual changes to eliminate viewer fatigue',
-    'Pattern interrupts (punch_in, statistic_callout, visual_reveal) when useful',
+    'Strong opening hook (< 2.8s) designed to stop viewer scroll instantly: "Would this visual make someone stop scrolling?"',
+    'Frequent meaningful visual changes to eliminate viewer fatigue without arbitrary rapid cutting',
+    'High visual contrast between adjacent shots (e.g. macro to wide, dark to glowing)',
+    'Pattern interrupts (punch_in, statistic_callout, visual_reveal) timed to narrative inflection points',
     'Retention-first editing with energetic, animated caption highlights',
   ],
 };
@@ -64,10 +75,23 @@ export const LONG_FORM_PROFILE: FormatEditorialProfile = {
   allowFrequentVisualChanges: false,
   captionTreatmentIntensity: 'subtle',
   motionPreference: 'cinematic',
+  visualHoldMaxDuration: 8.0,
+  repetitionThresholds: {
+    maxConsecutiveSameProvider: 3,
+    minShotsBeforeSubjectReuse: 5,
+    requireCompositionContrast: false,
+  },
+  narrativeStructure: {
+    useChapters: true,
+    chapterCadenceSeconds: 60,
+    visualResetIntervalSeconds: 45,
+    scrollStopHookRequired: false,
+  },
   guidelines: [
     'Designed for substantially longer narrative videos with chapter/section progression',
-    'Slower pacing where appropriate with longer visual holds when editorially justified',
-    'Less aggressive caption and pattern-interrupt usage',
+    'Slower pacing where appropriate with longer visual holds (up to 8.0s) when editorially justified',
+    'Visual resets at chapter boundaries using wide establishing visuals or thematic shifts',
+    'Less aggressive caption and pattern-interrupt usage for cinematic immersion',
     'Visual variety achieved through narrative contrast rather than artificial rapid cutting',
     'Deeper narrative escalation, visual contemplation, and satisfying editorial payoff',
   ],
@@ -81,4 +105,12 @@ export function getFormatProfile(format?: VideoFormat | string): FormatEditorial
     return LONG_FORM_PROFILE;
   }
   return SHORT_FORM_PROFILE;
+}
+
+export function isShortForm(format?: VideoFormat | string): boolean {
+  return !format || !format.toLowerCase().includes('long');
+}
+
+export function isLongForm(format?: VideoFormat | string): boolean {
+  return Boolean(format && format.toLowerCase().includes('long'));
 }

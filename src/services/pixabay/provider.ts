@@ -69,6 +69,13 @@ export class PixabayProvider implements BrollProvider {
         const nativeVertical = aspectRatio <= 0.85;
         const tags = hit.tags ? hit.tags.split(',').map((t) => t.trim().toLowerCase()) : [];
 
+        const thumbUrl =
+          selectedStream.thumbnail ||
+          hit.videos.tiny?.thumbnail ||
+          hit.videos.small?.thumbnail ||
+          hit.videos.medium?.thumbnail;
+        const prevUrl = hit.videos.tiny?.url || selectedStream.url;
+
         normalized.push({
           id: `pixabay_${hit.id}`,
           provider: 'pixabay',
@@ -81,6 +88,8 @@ export class PixabayProvider implements BrollProvider {
           durationSeconds: hit.duration,
           tags,
           nativeVertical,
+          thumbnailUrl: thumbUrl,
+          previewUrl: prevUrl,
         });
       }
 

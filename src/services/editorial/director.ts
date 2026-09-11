@@ -2,6 +2,7 @@ import { GeminiClient } from '../gemini/client';
 import { PipelineLogger } from '../logging/logger';
 import { EditorialEngine } from './editorialEngine';
 import { AIDirectorValidator } from './validator';
+import { VisualIntelligenceService } from './visualIntelligence';
 import {
   AIDirectorInput,
   EditorialPlan,
@@ -99,6 +100,7 @@ export class AIDirectorService {
    */
   public executeDeterministicFallback(input: AIDirectorInput): EditorialPlan {
     this.logger?.info('Executing deterministic fallback editorial engine...');
+    const formatProfile = getFormatProfile(input.format);
 
     // If scenePlan and script are available, use the established EditorialEngine
     if (input.scenePlan && input.script) {
@@ -140,14 +142,17 @@ export class AIDirectorService {
         totalDurationSeconds: input.targetDurationSeconds,
       });
 
-      // Synchronize candidate IDs
+      // Synchronize candidate IDs and visual descriptions
       for (let i = 0; i < plan.decisions.length; i++) {
         const candidate = input.candidateBoard.candidates[i % input.candidateBoard.candidates.length];
         if (candidate) {
           plan.decisions[i].selectedCandidateId = candidate.id;
+          const vis = candidate.visualReference || VisualIntelligenceService.evaluateVisualReference(candidate);
+          plan.decisions[i].visualDescription = vis.visualDescription;
         }
       }
 
+      plan.format = formatProfile.format;
       return plan;
     }
 
@@ -209,20 +214,31 @@ export class AIDirectorService {
     niche: typeof CLIPFORGE_NICHE_PROFILE,
     profile: ReturnType<typeof getFormatProfile>
   ): string {
-    const candidatesSummary = input.candidateBoard.candidates.map((c, i) => ({
-      index: i + 1,
-      id: c.id,
-      provider: c.provider,
-      providerAssetId: c.providerAssetId,
-      durationSeconds: c.durationSeconds,
-      dimensions: `${c.width}x${c.height}`,
-      isNativeVertical: c.nativeVertical,
-      tags: c.tags.slice(0, 6).join(', '),
-      relevanceScore: Math.round(c.relevanceScore * 100) / 100,
-      sourceUrl: c.sourceUrl || '',
-      thumbnailUrl: c.thumbnailUrl || c.previewUrl || undefined,
-      suggestedForScene: c.targetSceneIndex,
-    }));
+    const candidatesSummary = input.candidateBoard.candidates.map((c, i) => {
+      const vis = c.visualReference || VisualIntelligenceService.evaluateVisualReference(c);
+      return {
+        index: i + 1,
+        id: c.id,
+        provider: c.provider,
+        providerAssetId: c.providerAssetId,
+        durationSeconds: c.durationSeconds,
+        dimensions: `${c.width}x${c.height}`,
+        isNativeVertical: c.nativeVertical,
+        tags: c.tags.slice(0, 6).join(', '),
+        relevanceScore: Math.round(c.relevanceScore * 100) / 100,
+        thumbnailUrl: c.thumbnailUrl || c.previewUrl || undefined,
+        previewUrl: c.previewUrl || undefined,
+        visualLook: vis.visualDescription,
+        composition: vis.composition,
+        dominantSubject: vis.dominantSubject,
+        movement: vis.movementType,
+        lightingMood: vis.lightingMood,
+        visualEnergy: vis.visualEnergy,
+        scrollStopNovelty: vis.visualNoveltyScore,
+        aestheticQuality: vis.aestheticScore,
+        suggestedForScene: c.targetSceneIndex,
+      };
+    });
 
     const scenesSummary = input.scenePlan?.scenes.map((s) => ({
       sceneIndex: s.index,
@@ -304,6 +320,7 @@ ${niche.contentPillars.map((p) => `  * ${p}`).join('\n')}
 - Pacing Style: ${profile.pacingStyle}
 - Shot Duration Boundaries: ${profile.shotDurationRange.min}s to ${profile.shotDurationRange.max}s (target average: ~${profile.shotDurationRange.targetAverage}s)
 - Opening Hook Cut Max Duration: ${profile.hookDurationMax}s
+- Max Sustained Visual Hold: ${profile.visualHoldMaxDuration || profile.shotDurationRange.max}s
 - Pattern Interrupt Cooldown: minimum ${profile.patternInterruptCooldownSeconds}s between interrupts
 - Editorial Guidelines:
 ${profile.guidelines.map((g) => `  * ${g}`).join('\n')}
@@ -319,10 +336,11 @@ Scene Structure:
 ${JSON.stringify(scenesSummary, null, 2)}
 
 ====================================================
-4. B-ROLL CANDIDATE BOARD (AVAILABLE REAL ASSETS)
+4. B-ROLL CANDIDATE BOARD (AVAILABLE REAL ASSETS & VISUAL LOOKS)
 ====================================================
 You MUST select candidate assets strictly from this board using their exact "id".
 DO NOT invent candidate IDs that are not in this list.
+Inspect the "visualLook", "composition", "movement", "lightingMood", "thumbnailUrl", and "previewUrl" for each candidate:
 ${JSON.stringify(candidatesSummary, null, 2)}
 
 Previously Selected Assets in Session (avoid reusing if alternatives exist):
@@ -341,22 +359,27 @@ ${JSON.stringify(input.previouslySelectedAssets || [], null, 2)}
 ====================================================
 6. DIRECTOR RESPONSIBILITIES & EDITORIAL RULES
 ====================================================
-1. VISUAL VARIETY & RHYTHM:
-   - Do NOT force one B-roll asset to cover an entire sentence or scene.
-   - Introduce visual cuts when the narration shifts idea, delivers a number, reveals a fact, or reaches a dramatic turn.
-   - Balance rapid dynamic cuts (1.2s - 2.0s) with breath/holding shots (2.8s - 3.5s).
+1. VISUAL LOOK & COMPOSITION INTELLIGENCE:
+   - Evaluate the actual appearance ("visualLook", "composition", "movement", "lightingMood") of each candidate.
+   - Do NOT just match keywords! Choose visuals whose emotional resonance and composition amplify the spoken words.
+   - Shot 1 (The Hook): For short-form, ask: "Would this visual make someone stop scrolling?" Pick an asset with high novelty, unusual scale (e.g. macro or cosmic wide), or striking visual energy.
+   - Visual Contrast: Create dynamic contrast between consecutive shots (e.g. cut from a tight macro close-up to a sweeping wide vista, or from calm observation to high visual energy).
 2. TIMING & BOUNDS:
    - For every shot, specify inPoint and outPoint within the chosen asset's durationSeconds.
    - durationSeconds MUST equal (outPoint - inPoint).
    - inPoint must be >= 0. outPoint must be <= candidate.durationSeconds.
    - The SUM of durationSeconds across ALL decisions MUST equal EXACTLY ${input.targetDurationSeconds.toFixed(2)}s.
-3. RETENTION MECHANICS:
-   - Shot 1 MUST be a powerful 'hook' (duration <= ${profile.hookDurationMax}s, dramatic motion or punch_in, hook_pop caption).
-   - Use 'contrast' or 'escalation' before reaching the 'payoff'.
-   - Trigger pattern interrupts (e.g. punch_in or statistic_callout) only at critical narrative inflection points.
-4. REUSE PROTECTION:
-   - Prefer distinct candidate assets across shots.
-   - If you reuse a candidate asset, pick a non-overlapping time range (e.g. if used [0s, 3s], next use must be [3.2s, 6s]).
+3. FORMAT-SPECIFIC EDITORIAL PACING:
+   ${
+     profile.format === 'short'
+       ? `- SHORT-FORM: Rapid, dynamic curiosity-driven cuts (${profile.shotDurationRange.min}s - ${profile.shotDurationRange.max}s). Opening hook MUST be <= ${profile.hookDurationMax}s. Frequent meaningful visual changes without arbitrary cuts. Retention-first animated captions.`
+       : `- LONG-FORM: Structured chapter progression with thoughtful visual holds up to ${profile.visualHoldMaxDuration}s when narrating complex concepts. Wide visual resets at chapter transitions. Restrained captions and pattern interrupts for a cinematic viewing experience.`
+   }
+4. ANTI-REPETITION & CONTINUITY SAFEGUARDS:
+   - NEVER select the exact same candidate asset in two consecutive shots.
+   - Do NOT use the exact same composition (e.g. 3 wide shots) consecutively if alternatives exist.
+   - Limit runs of the same provider to maintain visual diversity.
+   - If reusing an asset later in the video, pick a non-overlapping time range (e.g. [0s, 2.5s] -> [3.0s, 5.5s]).
 
 ====================================================
 7. REQUIRED JSON RESPONSE SCHEMA
@@ -364,6 +387,7 @@ ${JSON.stringify(input.previouslySelectedAssets || [], null, 2)}
 Respond ONLY with a JSON object matching this schema:
 {
   "totalDurationSeconds": ${input.targetDurationSeconds.toFixed(2)},
+  "format": "${profile.format}",
   "editorialNarrativeArc": "Brief explanation of how the visual cuts support the narrative progression",
   "decisions": [
     {
@@ -387,6 +411,8 @@ Respond ONLY with a JSON object matching this schema:
         "intensity": "bold"
       },
       "editorialReason": "Punch in on galaxy cluster to shock the viewer in the first 2 seconds",
+      "visualDescription": "MACRO view of microchip circuit pathways with blue laser pulses",
+      "visualContrastNote": "Cuts from tight macro sensor to sweeping wide nebula",
       "pacingWeight": 1.2
     }
   ]

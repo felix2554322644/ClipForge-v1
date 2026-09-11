@@ -14,6 +14,8 @@ export interface NormalizedBrollVideo {
   quality?: string;
   tags?: string[];
   nativeVertical: boolean;
+  thumbnailUrl?: string;
+  previewUrl?: string;
 }
 
 export interface BrollProvider {

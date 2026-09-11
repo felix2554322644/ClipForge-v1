@@ -65,6 +65,8 @@ export class PexelsProvider implements BrollProvider {
           fps: portraitFile.fps,
           quality: portraitFile.quality,
           nativeVertical,
+          thumbnailUrl: video.image,
+          previewUrl: portraitFile.link || video.image,
         });
       }
 

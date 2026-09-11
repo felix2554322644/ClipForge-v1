@@ -68,6 +68,21 @@ export interface EditorialDecision {
   patternInterrupt?: PatternInterrupt;
   editorialReason: string;
   pacingWeight: number;
+  visualDescription?: string;
+  visualContrastNote?: string;
+  repetitionWarning?: string;
+}
+
+export interface EditorialChapter {
+  chapterIndex: number;
+  title: string;
+  startShotIndex: number;
+  endShotIndex: number;
+  startTime: number;
+  endTime: number;
+  durationSeconds: number;
+  visualTheme?: string;
+  pacingStyle?: string;
 }
 
 export interface EditorialPlan {
@@ -84,6 +99,45 @@ export interface EditorialPlan {
   varietyScore: number;
   patternInterruptCount: number;
   editorialNarrativeArc?: string;
+  format?: VideoFormat;
+  visualContinuityScore?: number;
+  compositionVarietyScore?: number;
+  repetitionPenalties?: number;
+  chapters?: EditorialChapter[];
+}
+
+export interface CandidateVisualReference {
+  thumbnailUrl?: string;
+  previewUrl?: string;
+  composition:
+    | 'close_up'
+    | 'extreme_close_up'
+    | 'medium'
+    | 'wide'
+    | 'extreme_wide'
+    | 'macro'
+    | 'aerial'
+    | 'portrait';
+  dominantSubject: string;
+  movementType:
+    | 'static'
+    | 'slow_drift'
+    | 'panning'
+    | 'tracking'
+    | 'rapid_motion'
+    | 'timelapse'
+    | 'hyperlapse';
+  visualEnergy: 'calm' | 'moderate' | 'high' | 'explosive';
+  lightingMood:
+    | 'cinematic_dark'
+    | 'neon'
+    | 'bright_daylight'
+    | 'atmospheric'
+    | 'cosmic_glow'
+    | 'studio';
+  visualNoveltyScore: number;
+  aestheticScore: number;
+  visualDescription: string;
 }
 
 export interface CandidateBrollAsset {
@@ -105,6 +159,7 @@ export interface CandidateBrollAsset {
   previewUrl?: string;
   relevanceScore: number;
   semanticDescription?: string;
+  visualReference?: CandidateVisualReference;
 }
 
 export interface BrollCandidateBoard {
@@ -112,6 +167,7 @@ export interface BrollCandidateBoard {
   totalCandidates: number;
   queriesRun: string[];
   previouslySelectedAssetIds?: string[];
+  visualThemesSummary?: string[];
 }
 
 export interface NicheProfile {
@@ -136,6 +192,18 @@ export interface FormatEditorialProfile {
   allowFrequentVisualChanges: boolean;
   captionTreatmentIntensity: 'high' | 'moderate' | 'subtle';
   motionPreference: 'dynamic' | 'balanced' | 'cinematic';
+  visualHoldMaxDuration?: number;
+  repetitionThresholds?: {
+    maxConsecutiveSameProvider: number;
+    minShotsBeforeSubjectReuse: number;
+    requireCompositionContrast: boolean;
+  };
+  narrativeStructure?: {
+    useChapters: boolean;
+    chapterCadenceSeconds?: number;
+    visualResetIntervalSeconds?: number;
+    scrollStopHookRequired: boolean;
+  };
   guidelines: string[];
 }
 
@@ -154,4 +222,10 @@ export interface AIDirectorInput {
   availableTransitions?: EditorialTransition[];
   availableCaptionTreatments?: CaptionTreatmentType[];
   availablePatternInterrupts?: PatternInterruptType[];
+  chapters?: {
+    index: number;
+    title: string;
+    approxStartTime: number;
+    approxEndTime: number;
+  }[];
 }
