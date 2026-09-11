@@ -6,6 +6,7 @@ import { GeminiClient } from '../services/gemini/client';
 import { ResearchService } from '../services/research/researcher';
 import { ScriptwriterService } from '../services/scripting/scriptwriter';
 import { PiperNarrationEngine } from '../services/narration/piper';
+import { NarrationPreprocessor } from '../services/narration/textPreprocessor';
 import { CaptionEngine } from '../services/captions/captionEngine';
 import { ScenePlanner } from '../services/scenes/planner';
 import { BrollSearcher } from '../services/broll/searcher';
@@ -105,7 +106,7 @@ export class VideoPipelineOrchestrator {
       job.progressPercent = 45;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
       const narrationWavPath = getArtifactPath(jobDir, 'NARRATION_WAV');
-      const combinedNarrationText = script.scenes.map((s) => s.narration).join(' ... ');
+      const combinedNarrationText = NarrationPreprocessor.joinSceneNarrations(script.scenes);
       const narrationArtifact = await this.narrationEngine.synthesizeSpeech(
         combinedNarrationText,
         narrationWavPath
