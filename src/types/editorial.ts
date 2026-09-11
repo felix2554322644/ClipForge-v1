@@ -52,6 +52,7 @@ export interface EditorialDecision {
   shotId: string;
   sceneIndex: number;
   shotIndex: number;
+  selectedCandidateId?: string;
   role: EditorialRole;
   narrationClause: string;
   durationSeconds: number;
@@ -82,4 +83,75 @@ export interface EditorialPlan {
   };
   varietyScore: number;
   patternInterruptCount: number;
+  editorialNarrativeArc?: string;
+}
+
+export interface CandidateBrollAsset {
+  id: string;
+  provider: 'pexels' | 'pixabay' | 'procedural' | 'cache';
+  providerAssetId: string;
+  sourceUrl?: string;
+  downloadUrl: string;
+  durationSeconds: number;
+  width: number;
+  height: number;
+  aspectRatio: number;
+  nativeVertical: boolean;
+  tags: string[];
+  queryUsed: string;
+  targetSceneIndex?: number;
+  targetShotId?: string;
+  thumbnailUrl?: string;
+  previewUrl?: string;
+  relevanceScore: number;
+  semanticDescription?: string;
+}
+
+export interface BrollCandidateBoard {
+  candidates: CandidateBrollAsset[];
+  totalCandidates: number;
+  queriesRun: string[];
+  previouslySelectedAssetIds?: string[];
+}
+
+export interface NicheProfile {
+  niche: string;
+  format: string;
+  audience: string;
+  language: string;
+  primaryGeography: string;
+  contentPillars: string[];
+}
+
+export type VideoFormat = 'short' | 'long';
+
+export interface FormatEditorialProfile {
+  format: VideoFormat;
+  aspectRatio: '9:16' | '16:9';
+  targetDurationRange: { min: number; max: number };
+  pacingStyle: string;
+  shotDurationRange: { min: number; max: number; targetAverage: number };
+  hookDurationMax: number;
+  patternInterruptCooldownSeconds: number;
+  allowFrequentVisualChanges: boolean;
+  captionTreatmentIntensity: 'high' | 'moderate' | 'subtle';
+  motionPreference: 'dynamic' | 'balanced' | 'cinematic';
+  guidelines: string[];
+}
+
+export interface AIDirectorInput {
+  nicheProfile?: NicheProfile;
+  format?: VideoFormat;
+  targetDurationSeconds: number;
+  script?: import('./pipeline').ScriptOutput;
+  narrationText: string;
+  narrationDurationSeconds: number;
+  scenePlan?: import('./pipeline').ScenePlanOutput;
+  candidateBoard: BrollCandidateBoard;
+  previouslySelectedAssets?: string[];
+  availableMotions?: EditorialMotion[];
+  availableCropModes?: CropMode[];
+  availableTransitions?: EditorialTransition[];
+  availableCaptionTreatments?: CaptionTreatmentType[];
+  availablePatternInterrupts?: PatternInterruptType[];
 }

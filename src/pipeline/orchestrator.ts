@@ -11,6 +11,8 @@ import { CaptionEngine } from '../services/captions/captionEngine';
 import { ScenePlanner } from '../services/scenes/planner';
 import { BrollSearcher } from '../services/broll/searcher';
 import { EditorialEngine } from '../services/editorial/editorialEngine';
+import { AIDirectorService } from '../services/editorial/director';
+import { CLIPFORGE_NICHE_PROFILE } from '../services/editorial/profiles';
 import { TimelineBuilder } from '../services/timeline/builder';
 import { FfmpegRenderer } from '../services/rendering/ffmpegRenderer';
 import { FfprobeValidator } from '../services/validation/ffprobeValidator';
@@ -29,11 +31,16 @@ export class VideoPipelineOrchestrator {
   private scenePlanner: ScenePlanner;
   private brollSearcher: BrollSearcher;
   private editorialEngine: EditorialEngine;
+  private editorialDirector: AIDirectorService;
   private timelineBuilder: TimelineBuilder;
   private renderer: FfmpegRenderer;
   private validator: FfprobeValidator;
 
-  constructor(geminiClient?: GeminiClient, topicManager?: TopicManager) {
+  constructor(
+    geminiClient?: GeminiClient,
+    topicManager?: TopicManager,
+    editorialDirector?: AIDirectorService
+  ) {
     this.logger = new PipelineLogger();
     this.gemini = geminiClient || new GeminiClient();
     this.topicManager =
@@ -46,6 +53,13 @@ export class VideoPipelineOrchestrator {
     this.scenePlanner = new ScenePlanner(this.logger);
     this.brollSearcher = new BrollSearcher(this.logger);
     this.editorialEngine = new EditorialEngine(this.logger);
+    this.editorialDirector =
+      editorialDirector ||
+      new AIDirectorService({
+        geminiClient: this.gemini,
+        deterministicEngine: this.editorialEngine,
+        logger: this.logger,
+      });
     this.timelineBuilder = new TimelineBuilder(this.logger);
     this.renderer = new FfmpegRenderer(this.logger);
     this.validator = new FfprobeValidator(this.logger);
@@ -131,29 +145,57 @@ export class VideoPipelineOrchestrator {
       scenePlan.captions = captions;
       this.saveArtifact(jobDir, ARTIFACT_FILES.SCENE_PLAN, scenePlan);
 
-      // 5. Multi-Shot B-Roll Selection & Reframing
+      // 5. Multi-Shot B-Roll Candidate Board Assembly
       job.currentStage = 'BROLL_SELECTION';
       job.progressPercent = 70;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
-      const brollSelections = await this.brollSearcher.selectBrollForScenes(
-        scenePlan.scenes,
-        jobDir
+      const candidateBoard = await this.brollSearcher.buildCandidateBoard(
+        scenePlan.scenes
       );
-      this.saveArtifact(jobDir, ARTIFACT_FILES.BROLL_SELECTION, brollSelections);
+      this.saveArtifact(jobDir, ARTIFACT_FILES.CANDIDATE_BOARD, candidateBoard);
 
-      // 5b. Retention-Optimized Editorial Decision Layer
+      // 5b. AI Editorial Director (Gemini decides -> ClipForge executes)
       job.currentStage = 'EDITORIAL_DECISION';
       job.progressPercent = 75;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
-      const editorialPlan = this.editorialEngine.makeEditorialDecisions({
-        scenePlan,
-        brollSelections,
+
+      const videoFormat =
+        (options?.profile === 'long' || job.profile === 'long') ? 'long' : 'short';
+
+      const editorialPlan = await this.editorialDirector.directVideo({
+        nicheProfile: CLIPFORGE_NICHE_PROFILE,
+        format: videoFormat,
+        targetDurationSeconds: narrationArtifact.durationSeconds,
         script,
-        totalDurationSeconds: narrationArtifact.durationSeconds,
-        researchBrief: brief,
-        captions,
+        narrationText: combinedNarrationText,
+        narrationDurationSeconds: narrationArtifact.durationSeconds,
+        scenePlan,
+        candidateBoard,
       });
+
+      // Materialize and reframe the selected video assets to 1080x1920 portrait
+      await this.brollSearcher.materializeEditorialPlan(
+        editorialPlan,
+        candidateBoard,
+        jobDir
+      );
       this.saveArtifact(jobDir, ARTIFACT_FILES.EDITORIAL, editorialPlan);
+
+      // Maintain backward-compatible broll-selection.json artifact
+      const brollSelections = editorialPlan.decisions.map((d) => ({
+        sceneIndex: d.sceneIndex,
+        shotId: d.shotId,
+        shotIndex: d.shotIndex,
+        videoPath: d.videoSourcePath,
+        reframedPath: d.videoSourcePath,
+        inPoint: d.inPoint,
+        outPoint: d.outPoint,
+        duration: d.durationSeconds,
+        motionEffect: d.motionEffect,
+        editorialRole: d.role,
+        captionTreatment: d.captionTreatment,
+      }));
+      this.saveArtifact(jobDir, ARTIFACT_FILES.BROLL_SELECTION, brollSelections);
 
       // Re-burn ASS captions with editorial moment synchronization
       const synchronizedAssPath = getArtifactPath(jobDir, 'CAPTIONS_ASS');

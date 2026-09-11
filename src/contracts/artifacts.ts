@@ -7,6 +7,7 @@ export const ARTIFACT_FILES = {
   NARRATION_WAV: 'narration.wav',
   NARRATION_JSON: 'narration.json',
   SCENE_PLAN: 'scene-plan.json',
+  CANDIDATE_BOARD: 'candidate-board.json',
   BROLL_SELECTION: 'broll-selection.json',
   EDITORIAL: 'editorial-plan.json',
   TIMELINE: 'timeline.json',

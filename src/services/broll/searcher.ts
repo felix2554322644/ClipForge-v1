@@ -14,6 +14,9 @@ import {
   PlannedScene,
   PlannedShot,
   SelectedBrollScene,
+  BrollCandidateBoard,
+  CandidateBrollAsset,
+  EditorialPlan,
 } from '../../types/pipeline';
 import { PipelineLogger } from '../logging/logger';
 import { CONFIG } from '../../config/index';
@@ -524,6 +527,303 @@ export class BrollSearcher {
     );
     return selections;
   }
+
+  /**
+   * Builds the comprehensive B-Roll Candidate Board for the AI Editorial Director.
+   * Gathers scored candidate assets from active providers (Pexels, Pixabay)
+   * along with guaranteed procedural options for each planned scene and shot.
+   */
+  async buildCandidateBoard(
+    scenes: PlannedScene[],
+    options?: { previouslySelectedAssets?: string[] }
+  ): Promise<BrollCandidateBoard> {
+    const shotsToProcess: { sceneIndex: number; shot: PlannedShot }[] = [];
+
+    for (const scene of scenes) {
+      if (scene.shots && scene.shots.length > 0) {
+        for (const shot of scene.shots) {
+          shotsToProcess.push({ sceneIndex: scene.index, shot });
+        }
+      } else {
+        const fallbackShot: PlannedShot = {
+          id: `scene_${scene.index}_shot_0`,
+          sceneIndex: scene.index,
+          shotIndex: 0,
+          narrationClause: scene.narration,
+          durationSeconds: scene.durationSeconds,
+          pacingType: 'normal',
+          brollQueries: scene.brollQuery || ['deep space galaxy'],
+          motionEffect: scene.motionEffect || 'zoom_in',
+          transition: 'cut',
+          captionText: scene.captionText || scene.narration,
+        };
+        shotsToProcess.push({ sceneIndex: scene.index, shot: fallbackShot });
+      }
+    }
+
+    const availableProviders = this.providers
+      .filter((p) => p.isAvailable())
+      .map((p) => p.name);
+
+    this.logger.stage(
+      'BROLL_SELECTION',
+      `Assembling B-Roll Candidate Board across ${shotsToProcess.length} shots (${availableProviders.join(', ') || 'Procedural only'})`
+    );
+
+    const candidates: CandidateBrollAsset[] = [];
+    const seenCandidateKeys = new Set<string>();
+    const queriesRun: string[] = [];
+    const previouslySelected = new Set(options?.previouslySelectedAssets || []);
+
+    for (let i = 0; i < shotsToProcess.length; i++) {
+      const { sceneIndex, shot } = shotsToProcess[i];
+      const targetDuration = shot.durationSeconds;
+      const initialQueries =
+        shot.brollQueries && shot.brollQueries.length > 0
+          ? shot.brollQueries
+          : ['deep space galaxy', 'space astronomy'];
+
+      const expandedQueries = this.expandQueries(initialQueries);
+
+      for (const query of expandedQueries) {
+        queriesRun.push(query);
+
+        for (const provider of this.providers) {
+          if (!provider.isAvailable()) continue;
+
+          try {
+            const results = await provider.searchVideos(query, 'portrait');
+
+            for (const item of results) {
+              // Hard landscape rejection check
+              if (item.width > item.height && !CONFIG.ALLOW_LANDSCAPE_FALLBACK) {
+                continue;
+              }
+
+              const candidateKey = `${item.provider}_${item.providerAssetId || item.id}`;
+              if (seenCandidateKeys.has(candidateKey)) {
+                continue;
+              }
+
+              const evaluation = BrollScorer.evaluateCandidate(
+                {
+                  id: item.id,
+                  provider: item.provider,
+                  providerAssetId: item.providerAssetId,
+                  width: item.width,
+                  height: item.height,
+                  duration: item.durationSeconds,
+                  url: item.downloadUrl,
+                  tags: item.tags,
+                },
+                targetDuration,
+                CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
+                previouslySelected,
+                query
+              );
+
+              if (evaluation.isRejected) {
+                continue;
+              }
+
+              seenCandidateKeys.add(candidateKey);
+
+              candidates.push({
+                id: candidateKey,
+                provider: item.provider,
+                providerAssetId: item.providerAssetId,
+                sourceUrl: item.sourceUrl,
+                downloadUrl: item.downloadUrl,
+                durationSeconds: item.durationSeconds,
+                width: item.width,
+                height: item.height,
+                aspectRatio: item.aspectRatio,
+                nativeVertical: item.nativeVertical,
+                tags: item.tags || [],
+                queryUsed: query,
+                targetSceneIndex: sceneIndex,
+                targetShotId: shot.id,
+                relevanceScore: evaluation.score,
+                semanticDescription: `${item.provider.toUpperCase()} candidate matching "${query}" (Score: ${evaluation.score}, ${evaluation.reason})`,
+              });
+            }
+          } catch (err: any) {
+            this.logger.warn(`Provider ${provider.name} query "${query}" failed: ${err.message}`);
+          }
+        }
+      }
+
+      // Always supply a guaranteed procedural fallback candidate for this shot
+      const procId = `proc_${shot.id}`;
+      if (!seenCandidateKeys.has(procId)) {
+        seenCandidateKeys.add(procId);
+        const theme = initialQueries[0] || 'space galaxy';
+        candidates.push({
+          id: procId,
+          provider: 'procedural',
+          providerAssetId: shot.id,
+          downloadUrl: `procedural://${encodeURIComponent(theme)}`,
+          durationSeconds: Math.max(targetDuration + 2.0, 6.0),
+          width: CONFIG.TARGET_WIDTH,
+          height: CONFIG.TARGET_HEIGHT,
+          aspectRatio: CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
+          nativeVertical: true,
+          tags: [theme, 'procedural', 'synthesized'],
+          queryUsed: theme,
+          targetSceneIndex: sceneIndex,
+          targetShotId: shot.id,
+          relevanceScore: 70,
+          semanticDescription: `Procedurally generated 1080x1920 vertical visual for theme "${theme}"`,
+        });
+      }
+    }
+
+    this.logger.info(
+      `Candidate Board assembled: ${candidates.length} candidate assets available for AI Director`
+    );
+
+    return {
+      candidates,
+      totalCandidates: candidates.length,
+      queriesRun: Array.from(new Set(queriesRun)),
+      previouslySelectedAssetIds: options?.previouslySelectedAssets || [],
+    };
+  }
+
+  /**
+   * Materializes the AI Director's decisions into concrete video source assets:
+   * downloads chosen footage, synthesizes procedural assets, reframes to 9:16 portrait,
+   * and binds videoSourcePath directly into the EditorialPlan decisions.
+   */
+  async materializeEditorialPlan(
+    editorialPlan: EditorialPlan,
+    candidateBoard: BrollCandidateBoard,
+    jobDir: string
+  ): Promise<EditorialPlan> {
+    const footageDir = path.join(jobDir, 'footage');
+    if (!fs.existsSync(footageDir)) {
+      fs.mkdirSync(footageDir, { recursive: true });
+    }
+
+    const candidateMap = new Map<string, CandidateBrollAsset>();
+    for (const c of candidateBoard.candidates) {
+      candidateMap.set(c.id, c);
+      if (c.providerAssetId) {
+        candidateMap.set(c.providerAssetId, c);
+      }
+    }
+
+    // Materialization cache to avoid downloading the exact same clip multiple times
+    const materializedPaths = new Map<string, { finalPath: string; duration: number }>();
+
+    for (let i = 0; i < editorialPlan.decisions.length; i++) {
+      const decision = editorialPlan.decisions[i];
+      const candidateId = decision.selectedCandidateId || '';
+      let candidate = candidateMap.get(candidateId) || candidateBoard.candidates[i % Math.max(1, candidateBoard.candidates.length)];
+
+      if (!candidate) {
+        candidate = {
+          id: `proc_${decision.shotId}`,
+          provider: 'procedural',
+          providerAssetId: decision.shotId,
+          downloadUrl: 'procedural://deep%20space',
+          durationSeconds: decision.durationSeconds + 2.0,
+          width: CONFIG.TARGET_WIDTH,
+          height: CONFIG.TARGET_HEIGHT,
+          aspectRatio: CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
+          nativeVertical: true,
+          tags: ['deep space'],
+          queryUsed: 'deep space',
+          relevanceScore: 70,
+        };
+      }
+
+      // Check if candidate clip was already materialized for this job
+      if (materializedPaths.has(candidate.id)) {
+        const existing = materializedPaths.get(candidate.id)!;
+        decision.videoSourcePath = existing.finalPath;
+        decision.sourceDurationSeconds = existing.duration;
+        continue;
+      }
+
+      let finalVideoPath = '';
+      let actualDuration = candidate.durationSeconds;
+
+      if (candidate.provider === 'procedural' || candidate.downloadUrl.startsWith('procedural://')) {
+        const theme = candidate.queryUsed || 'space galaxy';
+        const procPath = path.join(footageDir, `${decision.shotId}_procedural.mp4`);
+
+        EditingPrimitives.generateProceduralFootage(
+          procPath,
+          Math.max(decision.durationSeconds + 2.0, 6.0),
+          theme,
+          CONFIG.TARGET_WIDTH,
+          CONFIG.TARGET_HEIGHT,
+          CONFIG.TARGET_FPS
+        );
+        finalVideoPath = procPath;
+        actualDuration = Math.max(decision.durationSeconds + 2.0, 6.0);
+      } else {
+        const localClipPath = path.join(
+          footageDir,
+          `${decision.shotId}_${candidate.provider}_${candidate.providerAssetId}.mp4`
+        );
+
+        const normalizedItem: NormalizedBrollVideo = {
+          id: candidate.id,
+          provider: candidate.provider as BrollProviderName,
+          providerAssetId: candidate.providerAssetId,
+          sourceUrl: candidate.sourceUrl || '',
+          downloadUrl: candidate.downloadUrl,
+          width: candidate.width,
+          height: candidate.height,
+          aspectRatio: candidate.aspectRatio,
+          durationSeconds: candidate.durationSeconds,
+          nativeVertical: candidate.nativeVertical,
+        };
+
+        const downloaded = await this.downloadFootage(normalizedItem, localClipPath, candidate.queryUsed);
+
+        if (downloaded && fs.existsSync(localClipPath)) {
+          finalVideoPath = localClipPath;
+
+          // Reframe to 9:16 portrait if necessary
+          if (candidate.aspectRatio > 0.65) {
+            const reframedPath = path.join(footageDir, `${decision.shotId}_reframed.mp4`);
+            VideoReframer.reframeToPortrait(localClipPath, reframedPath);
+            finalVideoPath = reframedPath;
+          }
+        } else {
+          // Fall back to procedural footage if download fails
+          const theme = candidate.queryUsed || 'space galaxy';
+          const procPath = path.join(footageDir, `${decision.shotId}_proc_fallback.mp4`);
+          EditingPrimitives.generateProceduralFootage(
+            procPath,
+            Math.max(decision.durationSeconds + 2.0, 6.0),
+            theme,
+            CONFIG.TARGET_WIDTH,
+            CONFIG.TARGET_HEIGHT,
+            CONFIG.TARGET_FPS
+          );
+          finalVideoPath = procPath;
+          actualDuration = Math.max(decision.durationSeconds + 2.0, 6.0);
+        }
+      }
+
+      materializedPaths.set(candidate.id, { finalPath: finalVideoPath, duration: actualDuration });
+      decision.videoSourcePath = finalVideoPath;
+      decision.sourceDurationSeconds = actualDuration;
+
+      // Ensure inPoint and outPoint do not exceed the actual materialized video duration
+      if (decision.inPoint + decision.durationSeconds > actualDuration) {
+        decision.inPoint = Math.max(0, Math.round((actualDuration - decision.durationSeconds) * 100) / 100);
+        decision.outPoint = Math.round((decision.inPoint + decision.durationSeconds) * 100) / 100;
+      }
+    }
+
+    return editorialPlan;
+  }
+
 
   /**
    * Resolves footage file: checking custom downloader, local paths, BrollCache, and network download.

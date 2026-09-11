@@ -1,4 +1,9 @@
-import { EditorialMotion, EditorialTransition, CropMode } from './editorial';
+import {
+  EditorialMotion,
+  EditorialTransition,
+  CropMode,
+  CaptionTreatmentType,
+} from './editorial';
 
 export interface ResearchBrief {
   topic: string;
@@ -185,6 +190,7 @@ export interface TimelineCut {
   captionText: string;
   cropMode?: CropMode;
   motionIntensity?: 'subtle' | 'moderate' | 'dramatic';
+  captionTreatment?: CaptionTreatmentType;
 }
 
 export interface TimelineComposition {
