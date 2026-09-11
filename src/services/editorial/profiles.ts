@@ -6,20 +6,21 @@ import {
 
 /**
  * Hardcoded ClipForge Niche Profile.
- * Grounded in AI + Technology + Science + Future for high-retention educational entertainment.
+ * Grounded in Psychology + Human Behavior + Strange Human Mysteries for curiosity-driven educational entertainment.
  */
 export const CLIPFORGE_NICHE_PROFILE: NicheProfile = {
-  niche: 'AI + Technology + Science + Future',
+  niche: 'Psychology + Human Behavior + Strange Human Mysteries',
   format: 'Curiosity-driven educational entertainment',
-  audience: '18–34, core 18–29',
+  audience: '18–34, primarily US, UK, Canada, and Australia',
   language: 'English',
   primaryGeography: 'US, UK, Canada, Australia',
   contentPillars: [
-    'AI and emerging technology',
-    'space and physics',
-    'incredible science',
-    'future technology, engineering and robotics',
-    'human + technology mysteries',
+    'strange things the human brain does',
+    'social behavior and psychology',
+    'memory, perception, emotions, habits, attraction, fear, decision-making',
+    'unexplained or surprising human behaviors',
+    'everyday psychological phenomena',
+    'technology-related human behavior when relevant',
   ],
 };
 
@@ -52,8 +53,9 @@ export const SHORT_FORM_PROFILE: FormatEditorialProfile = {
     '9:16 vertical orientation optimized for TikTok, YouTube Shorts, and Reels',
     'Fast curiosity-driven pacing (average shot length 1.5s - 2.8s)',
     'Strong opening hook (< 2.8s) designed to stop viewer scroll instantly: "Would this visual make someone stop scrolling?"',
+    'Prioritize visual storytelling using real people, expressive faces, crowds, workplaces, homes, phones, cities, relationships, nature, and everyday environments',
     'Frequent meaningful visual changes to eliminate viewer fatigue without arbitrary rapid cutting',
-    'High visual contrast between adjacent shots (e.g. macro to wide, dark to glowing)',
+    'High visual contrast between adjacent shots (e.g. macro facial reaction to wide street crowd, calm observation to dynamic interaction)',
     'Pattern interrupts (punch_in, statistic_callout, visual_reveal) timed to narrative inflection points',
     'Retention-first editing with energetic, animated caption highlights',
   ],

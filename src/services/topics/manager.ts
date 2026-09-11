@@ -132,20 +132,27 @@ export class TopicManager {
         ? `\nPREVIOUSLY USED TOPICS TO AVOID (DO NOT REPEAT OR CLOSELY PARAPHRASE):\n${recentTopics.map((t) => `- "${t}"`).join('\n')}`
         : '';
 
-    const prompt = `You are an elite short-form video creator producing viral, high-retention 30-60 second educational shorts (YouTube Shorts / TikTok / Reels).
+    const prompt = `You are an elite video creator producing viral, high-retention 30-60 second curiosity-driven educational entertainment shorts (YouTube Shorts / TikTok / Reels) for an audience of 18–34 year olds in the US, UK, Canada, and Australia.
+Niche: Psychology + Human Behavior + Strange Human Mysteries.
 Generate ONE fresh, compelling video topic.
 
 CRITERIA:
-1. High viral curiosity gap: A mindbending question, counter-intuitive fact, or high-stakes mystery that hooks viewers within 2 seconds.
-2. Domain: Astronomy, extreme physics, deep biology mysteries, hidden technology, ancient engineering, or strange natural phenomena.
-3. Title: 6 to 12 words, title case, clear and arresting (e.g. "Why Time Moves Slower at Earth's Core", "The Impossible Physics of Rogue Ocean Waves", "How Whales Survive Depths That Crush Submarines").
-4. Substance: Must have clear factual depth and an intriguing revelation suitable for a 30-60s script.
+1. High viral curiosity gap: A mind-bending psychological quirk, counter-intuitive human behavior, shocking brain phenomenon, or everyday mystery that hooks viewers within 2 seconds.
+2. Domain:
+   - Strange things the human brain does (e.g. deja vu, doorway effect, intrusive thoughts, phantom vibrations, optical illusions, sleep paralysis)
+   - Social behavior and psychology (e.g. bystander effect, conformity, awkwardness, charisma, mimicry, crowd dynamics)
+   - Memory, perception, emotions, habits, attraction, fear, decision-making
+   - Unexplained or surprising human behaviors and everyday psychological phenomena
+   - Technology-related human behavior when relevant (e.g. doomscrolling psychology, parasocial bonds, algorithmic addiction)
+3. Visual Storytelling Potential: Prioritize topics with strong visual b-roll potential using real people, expressive faces, crowds, workplaces, homes, phones, cities, relationships, and everyday human environments.
+4. Title: 6 to 12 words, title case, clear and arresting (e.g. "Why You Instantly Forget Why You Entered a Room", "The Creepy Psychology Behind the Uncanny Valley", "Why Your Brain Hallucinates Phone Vibrations", "Why Losing Money Hurts Twice as Much as Winning").
+5. Substance: Must have clear factual depth grounded in psychological research and an intriguing revelation suitable for a 30-60s script.
 ${recentAvoidText}
 
 Respond ONLY with valid, raw JSON matching this schema:
 {
   "topic": "The exact video topic title",
-  "category": "Science" | "Technology" | "History" | "Nature" | "Space",
+  "category": "Psychology" | "Human Behavior" | "Brain Mysteries" | "Social Dynamics" | "Digital Psychology",
   "hookAngle": "One-sentence provocative hook question or observation"
 }`;
 
@@ -189,7 +196,7 @@ Respond ONLY with valid, raw JSON matching this schema:
     return {
       topic: cleanTopic,
       mode: 'GENERATED',
-      category: parsed.category || 'Science',
+      category: parsed.category || 'Psychology',
       hookAngle: parsed.hookAngle,
     };
   }
@@ -200,7 +207,7 @@ Respond ONLY with valid, raw JSON matching this schema:
   resolveFromPool(providedState?: TopicRotationState): ResolvedTopic {
     const pool = this.loadTopics();
     if (!pool || pool.length === 0) {
-      const fallback = 'The Mystery of Deep Space Fast Radio Bursts';
+      const fallback = 'Why You Instantly Forget Why You Entered a Room';
       this.logTopicSelection('ROTATION', fallback);
       return {
         topic: fallback,
