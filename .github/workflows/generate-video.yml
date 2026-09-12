@@ -51,6 +51,14 @@ jobs:
           restore-keys: |
             topic-state-
 
+      - name: Cache Procedural and Acquired Audio Assets
+        uses: actions/cache@v4
+        with:
+          path: cache/audio
+          key: audio-assets-v1
+          restore-keys: |
+            audio-assets-
+
       - name: Setup Piper TTS Runtime & Voice Models
         run: bash scripts/setup-piper.sh
 

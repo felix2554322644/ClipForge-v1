@@ -7,6 +7,7 @@ export type PipelineStage =
   | 'SCENE_PLANNING'
   | 'BROLL_SELECTION'
   | 'EDITORIAL_DECISION'
+  | 'AUDIO_MIXING'
   | 'TIMELINE_BUILDING'
   | 'RENDERING'
   | 'VALIDATION'

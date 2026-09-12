@@ -10,6 +10,7 @@ import { EditingPrimitives } from '../src/services/media/primitives';
 import { TimelineBuilder } from '../src/services/timeline/builder';
 import { FfmpegRenderer } from '../src/services/rendering/ffmpegRenderer';
 import { FfprobeValidator } from '../src/services/validation/ffprobeValidator';
+import { ProfessionalAudioMixer } from '../src/services/audio/mixer';
 import { SelectedBrollScene, ScenePlanOutput } from '../src/types/pipeline';
 
 test('E2E Render: End-to-end micro synthesis, composite render, and validation with burned-in captions', async () => {
@@ -19,6 +20,7 @@ test('E2E Render: End-to-end micro synthesis, composite render, and validation w
   const logger = new PipelineLogger(testDir);
   const narrationEngine = new PiperNarrationEngine(logger);
   const captionEngine = new CaptionEngine(logger);
+  const audioMixer = new ProfessionalAudioMixer(logger);
   const timelineBuilder = new TimelineBuilder(logger);
   const renderer = new FfmpegRenderer(logger);
   const validator = new FfprobeValidator(logger);
@@ -161,16 +163,24 @@ test('E2E Render: End-to-end micro synthesis, composite render, and validation w
     },
   ];
 
-  // 4. Assemble multi-shot timeline with burned-in captions
+  // 4. Mix professional audio (narration + music bed + strategic sfx)
+  const masterAudioPath = path.join(testDir, 'master-audio.wav');
+  const mixProbe = audioMixer.mixAudio(audioPath, masterAudioPath, {
+    targetDurationSeconds: audioArtifact.durationSeconds,
+  });
+  assert.ok(fs.existsSync(masterAudioPath), 'Master mixed audio must exist');
+  assert.equal(Math.round(mixProbe.durationSeconds), Math.round(audioArtifact.durationSeconds), 'Master audio duration must match narration duration');
+
+  // 5. Assemble multi-shot timeline with burned-in captions and master audio
   const timeline = timelineBuilder.buildTimeline(
     scenePlan,
     broll,
-    audioPath,
+    masterAudioPath,
     captions,
     assPath
   );
 
-  // 5. Render final video
+  // 6. Render final video
   const finalVideoPath = path.join(testDir, 'final-video.mp4');
   const report = await renderer.render(timeline, finalVideoPath);
 

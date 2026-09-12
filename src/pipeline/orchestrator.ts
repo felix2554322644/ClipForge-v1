@@ -15,6 +15,8 @@ import { EditorialEngine } from '../services/editorial/editorialEngine';
 import { AIDirectorService } from '../services/editorial/director';
 import { CLIPFORGE_NICHE_PROFILE } from '../services/editorial/profiles';
 import { TimelineBuilder } from '../services/timeline/builder';
+import { ProfessionalAudioMixer } from '../services/audio/mixer';
+import { AudioPlanner } from '../services/audio/planner';
 import { FfmpegRenderer } from '../services/rendering/ffmpegRenderer';
 import { FfprobeValidator } from '../services/validation/ffprobeValidator';
 import { PipelineJob } from '../contracts/job';
@@ -34,6 +36,7 @@ export class VideoPipelineOrchestrator {
   private brollSearcher: BrollSearcher;
   private editorialEngine: EditorialEngine;
   private editorialDirector: AIDirectorService;
+  private audioMixer: ProfessionalAudioMixer;
   private timelineBuilder: TimelineBuilder;
   private renderer: FfmpegRenderer;
   private validator: FfprobeValidator;
@@ -42,7 +45,8 @@ export class VideoPipelineOrchestrator {
     geminiClient?: GeminiClient,
     topicManager?: TopicManager,
     editorialDirector?: AIDirectorService,
-    storyboardService?: AIStoryboardService
+    storyboardService?: AIStoryboardService,
+    audioMixer?: ProfessionalAudioMixer
   ) {
     this.logger = new PipelineLogger();
     this.gemini = geminiClient || new GeminiClient();
@@ -69,6 +73,7 @@ export class VideoPipelineOrchestrator {
         deterministicEngine: this.editorialEngine,
         logger: this.logger,
       });
+    this.audioMixer = audioMixer || new ProfessionalAudioMixer(this.logger);
     this.timelineBuilder = new TimelineBuilder(this.logger);
     this.renderer = new FfmpegRenderer(this.logger);
     this.validator = new FfprobeValidator(this.logger);
@@ -230,28 +235,66 @@ export class VideoPipelineOrchestrator {
         editorialPlan
       );
 
-      // 6. Timeline Building (Multi-shot with burned-in caption directives & editorial decisions)
+      // 6. Professional Audio Mixing (Narration + Music Bed with Dynamic Sidechain Ducking + Editorial SFX Cues)
+      job.currentStage = 'AUDIO_MIXING';
+      job.progressPercent = 80;
+      this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
+
+      const audioPlan = AudioPlanner.planAudio({
+        totalDurationSeconds: narrationArtifact.durationSeconds,
+        editorialPlan,
+        script,
+        researchBrief: brief,
+      });
+      this.saveArtifact(jobDir, ARTIFACT_FILES.AUDIO_PLAN_JSON, audioPlan);
+
+      const masterAudioWavPath = getArtifactPath(jobDir, 'MASTER_AUDIO_WAV');
+      let finalAudioPath = narrationWavPath;
+      try {
+        const audioProbe = this.audioMixer.mixAudio(
+          narrationWavPath,
+          masterAudioWavPath,
+          {
+            targetDurationSeconds: narrationArtifact.durationSeconds,
+            audioPlan,
+            editorialPlan,
+            script,
+            researchBrief: brief,
+          }
+        );
+        finalAudioPath = masterAudioWavPath;
+        this.logger.info(
+          `Master audio mix created at ${masterAudioWavPath} (${audioProbe.durationSeconds.toFixed(2)}s)`
+        );
+      } catch (mixErr) {
+        this.logger.warn(
+          `Audio mixing encountered an unexpected failure: ${(mixErr as Error).message}. Falling back to clean narration audio.`
+        );
+        finalAudioPath = narrationWavPath;
+      }
+
+      // 7. Timeline Building (Multi-shot with burned-in caption directives & editorial decisions)
       job.currentStage = 'TIMELINE_BUILDING';
-      job.progressPercent = 82;
+      job.progressPercent = 85;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
       const timeline = this.timelineBuilder.buildTimelineFromEditorial(
         editorialPlan,
-        narrationWavPath,
+        finalAudioPath,
         captions,
         synchronizedAssPath
       );
       job.duration = timeline.totalDurationSeconds;
       this.saveArtifact(jobDir, ARTIFACT_FILES.TIMELINE, timeline);
 
-      // 7. Video Composite Rendering (burns in ASS captions, enforces exact audio duration)
+      // 8. Video Composite Rendering (burns in ASS captions, enforces exact audio duration)
       job.currentStage = 'RENDERING';
-      job.progressPercent = 90;
+      job.progressPercent = 92;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
       const finalVideoPath = getArtifactPath(jobDir, 'FINAL_VIDEO');
       const renderReport = await this.renderer.render(timeline, finalVideoPath);
       this.saveArtifact(jobDir, ARTIFACT_FILES.RENDER_REPORT, renderReport);
 
-      // 8. Quality Validation (tight duration tolerance <= 0.4s)
+      // 9. Quality Validation (tight duration tolerance <= 0.4s)
       job.currentStage = 'VALIDATION';
       job.progressPercent = 98;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);

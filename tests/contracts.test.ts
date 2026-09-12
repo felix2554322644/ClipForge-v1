@@ -40,6 +40,7 @@ test('Contracts: Piper companion config contains valid audio sample rate', () =>
 test('Contracts: Artifact files mapping matches specification', () => {
   assert.equal(ARTIFACT_FILES.JOB, 'job.json');
   assert.equal(ARTIFACT_FILES.NARRATION_WAV, 'narration.wav');
+  assert.equal(ARTIFACT_FILES.MASTER_AUDIO_WAV, 'master-audio.wav');
   assert.equal(ARTIFACT_FILES.FINAL_VIDEO, 'final-video.mp4');
   assert.equal(ARTIFACT_FILES.VALIDATION, 'validation.json');
 
