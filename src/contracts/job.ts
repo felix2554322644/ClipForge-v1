@@ -11,6 +11,7 @@ export type PipelineStage =
   | 'TIMELINE_BUILDING'
   | 'RENDERING'
   | 'VALIDATION'
+  | 'FINAL_QC'
   | 'COMPLETED'
   | 'FAILED';
 

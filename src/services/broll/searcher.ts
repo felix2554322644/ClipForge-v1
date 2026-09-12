@@ -8,6 +8,8 @@ import { BrollScorer, ScorerEvaluation } from './scorer';
 import { BrollCache } from './cache';
 import { VideoReframer } from '../media/reframing';
 import { EditingPrimitives } from '../media/primitives';
+import { VisualCohesionService } from '../media/cohesion';
+import { PlaywrightSceneRenderer } from '../visuals/renderer';
 import { VisualIntelligenceService } from '../editorial/visualIntelligence';
 import {
   BrollCandidate,
@@ -785,10 +787,51 @@ export class BrollSearcher {
     // Materialization cache to avoid downloading the exact same clip multiple times
     const materializedPaths = new Map<string, { finalPath: string; duration: number }>();
 
+    const visualCohesion = new VisualCohesionService(this.logger);
+    const sceneRenderer = new PlaywrightSceneRenderer(this.logger);
+
+    // Enforce continuity constraints across consecutive shots
+    visualCohesion.enforceEditorialContinuity(editorialPlan);
+
     for (let i = 0; i < editorialPlan.decisions.length; i++) {
       const decision = editorialPlan.decisions[i];
+      const prevDecision = i > 0 ? editorialPlan.decisions[i - 1] : undefined;
       const candidateId = decision.selectedCandidateId || '';
       let candidate = candidateMap.get(candidateId) || candidateBoard.candidates[i % Math.max(1, candidateBoard.candidates.length)];
+
+      // 1. Check if AI Director requested a custom visual (kinetic typography, statistic card, diagram, etc.)
+      const isCustomVisual =
+        decision.visualType === 'custom' ||
+        decision.visualType === 'graphic' ||
+        decision.visualType === 'typography' ||
+        Boolean(decision.customSceneParams);
+
+      if (isCustomVisual) {
+        const customSceneParams = decision.customSceneParams || {
+          type: 'kinetic_typography',
+          headline: decision.narrationClause || 'Key Discovery',
+          emphasisWord: decision.narrationClause?.split(' ')[0] || 'Discovery',
+          title: decision.role || 'Visual Focus',
+        };
+
+        const customOutputPath = path.join(footageDir, `${decision.shotId}_custom.mp4`);
+        const renderResult = await sceneRenderer.renderScene({
+          sceneParams: customSceneParams,
+          format: 'short',
+          durationSeconds: Math.max(decision.durationSeconds + 1.0, 4.0),
+          outputPath: customOutputPath,
+        });
+
+        const customVideoPath = renderResult.filePath || customOutputPath;
+        const customDuration = renderResult.durationSeconds || Math.max(decision.durationSeconds + 1.0, 4.0);
+
+        materializedPaths.set(`custom_${decision.shotId}`, { finalPath: customVideoPath, duration: customDuration });
+        decision.videoSourcePath = customVideoPath;
+        decision.sourceDurationSeconds = customDuration;
+        decision.inPoint = 0;
+        decision.outPoint = Math.round(decision.durationSeconds * 100) / 100;
+        continue;
+      }
 
       if (!candidate) {
         candidate = {
@@ -856,11 +899,30 @@ export class BrollSearcher {
         if (downloaded && fs.existsSync(localClipPath)) {
           finalVideoPath = localClipPath;
 
-          // Reframe to 9:16 portrait if necessary
-          if (candidate.aspectRatio > 0.65) {
-            const reframedPath = path.join(footageDir, `${decision.shotId}_reframed.mp4`);
-            VideoReframer.reframeToPortrait(localClipPath, reframedPath);
-            finalVideoPath = reframedPath;
+          // Apply subject-safe Visual Cohesion and reframing
+          const cohesionOutPath = path.join(footageDir, `${decision.shotId}_cohesive.mp4`);
+          try {
+            visualCohesion.processShotVisuals(
+              localClipPath,
+              cohesionOutPath,
+              decision.motionEffect,
+              decision.cropMode,
+              true,
+              prevDecision?.motionEffect,
+              { targetWidth: CONFIG.TARGET_WIDTH, targetHeight: CONFIG.TARGET_HEIGHT, fps: CONFIG.TARGET_FPS }
+            );
+            if (fs.existsSync(cohesionOutPath) && fs.statSync(cohesionOutPath).size > 0) {
+              finalVideoPath = cohesionOutPath;
+            }
+          } catch (cohesionErr) {
+            this.logger?.warn?.(
+              `VisualCohesion failed for ${decision.shotId} (${(cohesionErr as Error).message}), falling back to standard reframe.`
+            );
+            if (candidate.aspectRatio > 0.65) {
+              const reframedPath = path.join(footageDir, `${decision.shotId}_reframed.mp4`);
+              VideoReframer.reframeToPortrait(localClipPath, reframedPath);
+              finalVideoPath = reframedPath;
+            }
           }
         } else {
           // Fall back to procedural footage if download fails

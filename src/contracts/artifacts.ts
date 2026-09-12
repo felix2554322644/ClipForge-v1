@@ -20,6 +20,7 @@ export const ARTIFACT_FILES = {
   PRODUCTION_MP4: 'clipforge-final.mp4',
   RENDER_REPORT: 'render-report.json',
   VALIDATION: 'validation.json',
+  FINAL_QC: 'final-qc.json',
   PIPELINE_LOG: 'pipeline.log',
 } as const;
 

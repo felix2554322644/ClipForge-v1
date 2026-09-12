@@ -73,6 +73,8 @@ export interface EditorialDecision {
   visualDescription?: string;
   visualContrastNote?: string;
   repetitionWarning?: string;
+  visualType?: 'stock' | 'procedural' | 'custom' | 'graphic' | 'typography';
+  customSceneParams?: any;
 }
 
 export interface EditorialChapter {

@@ -368,6 +368,12 @@ export class AIDirectorValidator {
         }
       }
 
+      const visualType =
+        raw.visualType && ['stock', 'procedural', 'custom', 'graphic', 'typography'].includes(raw.visualType)
+          ? raw.visualType
+          : undefined;
+      const customSceneParams = raw.customSceneParams || undefined;
+
       sanitizedDecisions.push({
         shotId,
         sceneIndex,
@@ -390,6 +396,8 @@ export class AIDirectorValidator {
         pacingWeight,
         visualDescription,
         visualContrastNote,
+        visualType,
+        customSceneParams,
       });
     }
 

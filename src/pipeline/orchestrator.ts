@@ -19,6 +19,7 @@ import { ProfessionalAudioMixer } from '../services/audio/mixer';
 import { AudioPlanner } from '../services/audio/planner';
 import { FfmpegRenderer } from '../services/rendering/ffmpegRenderer';
 import { FfprobeValidator } from '../services/validation/ffprobeValidator';
+import { FinalQualityControlService } from '../services/qc/finalQc';
 import { PipelineJob } from '../contracts/job';
 import { ARTIFACT_FILES, getArtifactPath } from '../contracts/artifacts';
 import { TopicManager } from '../services/topics/manager';
@@ -40,13 +41,15 @@ export class VideoPipelineOrchestrator {
   private timelineBuilder: TimelineBuilder;
   private renderer: FfmpegRenderer;
   private validator: FfprobeValidator;
+  private qcService: FinalQualityControlService;
 
   constructor(
     geminiClient?: GeminiClient,
     topicManager?: TopicManager,
     editorialDirector?: AIDirectorService,
     storyboardService?: AIStoryboardService,
-    audioMixer?: ProfessionalAudioMixer
+    audioMixer?: ProfessionalAudioMixer,
+    qcService?: FinalQualityControlService
   ) {
     this.logger = new PipelineLogger();
     this.gemini = geminiClient || new GeminiClient();
@@ -77,6 +80,7 @@ export class VideoPipelineOrchestrator {
     this.timelineBuilder = new TimelineBuilder(this.logger);
     this.renderer = new FfmpegRenderer(this.logger);
     this.validator = new FfprobeValidator(this.logger);
+    this.qcService = qcService || new FinalQualityControlService(this.logger);
   }
 
   async runJob(
@@ -296,7 +300,7 @@ export class VideoPipelineOrchestrator {
 
       // 9. Quality Validation (tight duration tolerance <= 0.4s)
       job.currentStage = 'VALIDATION';
-      job.progressPercent = 98;
+      job.progressPercent = 95;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
       const validation = this.validator.validate(finalVideoPath, timeline.totalDurationSeconds);
       this.saveArtifact(jobDir, ARTIFACT_FILES.VALIDATION, validation);
@@ -304,6 +308,21 @@ export class VideoPipelineOrchestrator {
       if (!validation.isValid) {
         throw new Error(`Quality validation failed: ${validation.errors.join(', ')}`);
       }
+
+      // 10. Final Quality Control (QC Inspection with Gemini Multimodal or deterministic fallback)
+      job.currentStage = 'FINAL_QC';
+      job.progressPercent = 98;
+      this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
+      const qcReport = await this.qcService.evaluateVideo(
+        finalVideoPath,
+        timeline.totalDurationSeconds,
+        {
+          editorialPlan,
+          topic: activeTopic,
+          script,
+        }
+      );
+      this.saveArtifact(jobDir, ARTIFACT_FILES.FINAL_QC, qcReport);
 
       // 8b. Export single production deliverable (PART 12: final MP4 only)
       const productionMp4Path = path.join(CONFIG.OUTPUT_DIR, ARTIFACT_FILES.PRODUCTION_MP4);

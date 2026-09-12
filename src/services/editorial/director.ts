@@ -514,7 +514,9 @@ Respond ONLY with a JSON object matching this schema:
       "editorialReason": "Punch in on galaxy cluster to shock the viewer in the first 2 seconds",
       "visualDescription": "MACRO view of microchip circuit pathways with blue laser pulses",
       "visualContrastNote": "Cuts from tight macro sensor to sweeping wide nebula",
-      "pacingWeight": 1.2
+      "pacingWeight": 1.2,
+      "visualType": "stock",
+      "customSceneParams": null
     }
   ]
 }
