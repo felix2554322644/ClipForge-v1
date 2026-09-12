@@ -320,17 +320,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       let activeScale = defaultScalePercent;
 
       if (activeTreatment === 'hook_pop') {
-        activeEmphasisColor = '&H0000E6FF&'; // Vibrant Golden Yellow
+        activeEmphasisColor = '&H0023A6F5&'; // Warm Gold/Amber
         activeScale = 116;
-      } else if (activeTreatment === 'statistic_callout') {
-        activeEmphasisColor = '&H00FFFF00&'; // Electric Cyan
+      } else if (activeTreatment === 'concept_emphasis') {
+        activeEmphasisColor = '&H0033E6FF&'; // Radiant Amber/Cyan
         activeScale = 114;
-      } else if (activeTreatment === 'reveal_pop') {
-        activeEmphasisColor = '&H0033E6FF&'; // Radiant Amber
+      } else if (activeTreatment === 'statistic_callout') {
+        activeEmphasisColor = '&H00FFFF00&'; // Electric Yellow
+        activeScale = 115;
+      } else if (activeTreatment === 'reveal' || activeTreatment === 'reveal_pop') {
+        activeEmphasisColor = '&H00FFE600&'; // Cyan
         activeScale = 115;
       } else if (activeTreatment === 'payoff_impact') {
         activeEmphasisColor = '&H0000FF66&'; // Neon Green
         activeScale = 116;
+      } else {
+        activeEmphasisColor = defaultEmphasisColor;
+        activeScale = defaultScalePercent;
       }
 
       let text = seg.text;

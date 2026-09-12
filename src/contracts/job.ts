@@ -3,6 +3,7 @@ export type PipelineStage =
   | 'RESEARCH'
   | 'SCRIPTING'
   | 'NARRATION'
+  | 'STORYBOARD'
   | 'SCENE_PLANNING'
   | 'BROLL_SELECTION'
   | 'EDITORIAL_DECISION'

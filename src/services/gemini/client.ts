@@ -1,6 +1,16 @@
 import { GoogleGenAI } from '@google/genai';
 import { CONFIG } from '../../config/index';
 
+export interface GeminiPart {
+  text?: string;
+  inlineData?: {
+    mimeType: string;
+    data: string;
+  };
+}
+
+export type GeminiContents = string | { parts: GeminiPart[] } | GeminiPart[];
+
 export interface GeminiClientOptions {
   primaryKey?: string;
   secondaryKey?: string;
@@ -11,7 +21,7 @@ export interface GeminiClientOptions {
   logger?: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void };
   customRunner?: (
     keyLabel: 'PRIMARY' | 'SECONDARY',
-    prompt: string,
+    prompt: any,
     attempt: number
   ) => Promise<string>;
 }
@@ -155,7 +165,7 @@ export class GeminiClient {
    * Executes a Gemini request with bounded exponential backoff and automatic failover
    * to GEMINI_API_KEY_2 if the primary key encounters retryable quota/rate-limit errors.
    */
-  async executeWithFailover(prompt: string): Promise<string> {
+  async executeWithFailover(promptOrContents: GeminiContents): Promise<string> {
     const hasPrimary = Boolean(this.primaryKey && this.primaryKey.trim() !== '');
     const hasSecondary = Boolean(this.secondaryKey && this.secondaryKey.trim() !== '');
 
@@ -172,7 +182,7 @@ export class GeminiClient {
       while (attempt < maxAttempts) {
         attempt++;
         try {
-          const result = await this.callAi('PRIMARY', prompt, attempt);
+          const result = await this.callAi('PRIMARY', promptOrContents, attempt);
           return result;
         } catch (err) {
           if (!isRetryableGeminiError(err)) {
@@ -207,7 +217,7 @@ export class GeminiClient {
     while (secAttempt < secMaxAttempts) {
       secAttempt++;
       try {
-        const result = await this.callAi('SECONDARY', prompt, secAttempt);
+        const result = await this.callAi('SECONDARY', promptOrContents, secAttempt);
         this.log('[GEMINI] Secondary key request succeeded');
         return result;
       } catch (err) {
@@ -237,12 +247,25 @@ export class GeminiClient {
   /**
    * Generates JSON output with failover and schema extraction.
    */
-  async generateJson<T>(prompt: string, fallbackGenerator?: () => T): Promise<T> {
+  async generateJson<T>(promptOrContents: GeminiContents, fallbackGenerator?: () => T): Promise<T> {
     if (this.isAvailable()) {
       try {
-        const text = await this.executeWithFailover(
-          prompt + '\n\nIMPORTANT: Respond ONLY with valid, raw JSON. No markdown blocks, no commentary.'
-        );
+        let contentsToExecute: GeminiContents;
+        const jsonPromptSuffix = '\n\nIMPORTANT: Respond ONLY with valid, raw JSON. No markdown blocks, no commentary.';
+
+        if (typeof promptOrContents === 'string') {
+          contentsToExecute = promptOrContents + jsonPromptSuffix;
+        } else if (Array.isArray(promptOrContents)) {
+          contentsToExecute = [...promptOrContents, { text: jsonPromptSuffix }];
+        } else if (promptOrContents && typeof promptOrContents === 'object' && 'parts' in promptOrContents) {
+          contentsToExecute = {
+            parts: [...promptOrContents.parts, { text: jsonPromptSuffix }],
+          };
+        } else {
+          contentsToExecute = promptOrContents;
+        }
+
+        const text = await this.executeWithFailover(contentsToExecute);
 
         const cleaned = text.replace(/```json\s*|\s*```/g, '').trim();
         return JSON.parse(cleaned) as T;
@@ -272,9 +295,10 @@ export class GeminiClient {
     throw new Error('Gemini API is unavailable (no API keys configured) and fallbacks are disabled.');
   }
 
-  private async callAi(keyLabel: 'PRIMARY' | 'SECONDARY', prompt: string, attempt: number): Promise<string> {
-    if (this.customRunner) {
-      return this.customRunner(keyLabel, prompt, attempt);
+  private async callAi(keyLabel: 'PRIMARY' | 'SECONDARY', promptOrContents: GeminiContents, attempt: number): Promise<string> {
+    const runner = this.customRunner;
+    if (runner) {
+      return runner(keyLabel, promptOrContents as any, attempt);
     }
 
     const ai = keyLabel === 'PRIMARY' ? this.primaryAi : this.secondaryAi;
@@ -282,9 +306,18 @@ export class GeminiClient {
       throw new Error(`AI instance for ${keyLabel} is not initialized.`);
     }
 
+    let contentsPayload: any;
+    if (typeof promptOrContents === 'string') {
+      contentsPayload = promptOrContents;
+    } else if (Array.isArray(promptOrContents)) {
+      contentsPayload = { parts: promptOrContents };
+    } else {
+      contentsPayload = promptOrContents;
+    }
+
     const response = await ai.models.generateContent({
       model: this.model,
-      contents: prompt,
+      contents: contentsPayload,
     });
 
     return response.text || '';

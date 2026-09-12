@@ -48,7 +48,9 @@ const VALID_TRANSITIONS: Set<EditorialTransition> = new Set(['cut', 'fade', 'fla
 const VALID_CAPTION_TREATMENTS: Set<CaptionTreatmentType> = new Set([
   'standard',
   'hook_pop',
+  'concept_emphasis',
   'statistic_callout',
+  'reveal',
   'reveal_pop',
   'payoff_impact',
 ]);

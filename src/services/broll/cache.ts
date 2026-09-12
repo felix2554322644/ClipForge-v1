@@ -32,15 +32,40 @@ export class BrollCache {
     if (entry && fs.existsSync(entry.filePath)) {
       return entry.filePath;
     }
+    const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fallbackPath = path.join(this.cacheDir, 'broll', `${safeKey}.mp4`);
+    if (fs.existsSync(fallbackPath)) {
+      return fallbackPath;
+    }
     return null;
   }
 
-  set(key: string, filePath: string, duration: number, query: string) {
-    this.index[key] = { filePath, duration, query };
+  set(key: string, filePath: string, duration: number, query: string): string {
+    const brollDir = path.join(this.cacheDir, 'broll');
+    if (!fs.existsSync(brollDir)) {
+      fs.mkdirSync(brollDir, { recursive: true });
+    }
+    const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const cachedFile = path.join(brollDir, `${safeKey}.mp4`);
+
+    let targetPath = filePath;
+    try {
+      if (fs.existsSync(filePath) && path.resolve(filePath) !== path.resolve(cachedFile)) {
+        fs.copyFileSync(filePath, cachedFile);
+        targetPath = cachedFile;
+      } else if (fs.existsSync(cachedFile)) {
+        targetPath = cachedFile;
+      }
+    } catch {
+      targetPath = filePath;
+    }
+
+    this.index[key] = { filePath: targetPath, duration, query };
     try {
       fs.writeFileSync(this.indexPath, JSON.stringify(this.index, null, 2), 'utf-8');
     } catch {
       // Ignore write errors
     }
+    return targetPath;
   }
 }

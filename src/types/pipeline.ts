@@ -233,3 +233,4 @@ export interface ValidationResult {
 }
 
 export * from './editorial';
+export * from './storyboard';

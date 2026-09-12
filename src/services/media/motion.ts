@@ -24,6 +24,14 @@ export class MotionApplier {
   ): MotionParameters {
     const normalized = effect.toLowerCase().trim();
 
+    // Base scale adjustment based on cropMode
+    const baseScale =
+      cropMode === 'punch_in'
+        ? 1.15
+        : cropMode === 'tight'
+        ? 1.22
+        : 1.0;
+
     // Scale intensity multipliers
     const zoomDelta = intensity === 'subtle' ? 0.04 : intensity === 'dramatic' ? 0.08 : 0.06;
     const panTravel = intensity === 'subtle' ? 0.40 : intensity === 'dramatic' ? 0.75 : 0.60;
@@ -32,9 +40,9 @@ export class MotionApplier {
       case 'push_in':
       case 'zoom_in':
         return {
-          startScale: 1.0,
-          endScale: 1.0 + zoomDelta,
-          maxScale: 1.0 + zoomDelta,
+          startScale: baseScale,
+          endScale: baseScale + zoomDelta,
+          maxScale: baseScale + zoomDelta,
           panPercent: 0,
           tiltPercent: 0,
           isAnimated: true,
@@ -43,9 +51,9 @@ export class MotionApplier {
       case 'pull_out':
       case 'zoom_out':
         return {
-          startScale: 1.0 + zoomDelta,
-          endScale: 1.0,
-          maxScale: 1.0 + zoomDelta,
+          startScale: baseScale + zoomDelta,
+          endScale: baseScale,
+          maxScale: baseScale + zoomDelta,
           panPercent: 0,
           tiltPercent: 0,
           isAnimated: true,
@@ -53,9 +61,9 @@ export class MotionApplier {
 
       case 'punch_in':
         return {
-          startScale: 1.15,
-          endScale: 1.18,
-          maxScale: 1.18,
+          startScale: Math.max(1.15, baseScale),
+          endScale: Math.max(1.15, baseScale) + 0.03,
+          maxScale: Math.max(1.15, baseScale) + 0.03,
           panPercent: 0,
           tiltPercent: 0,
           isAnimated: true,
@@ -64,9 +72,9 @@ export class MotionApplier {
       case 'pan_left':
       case 'pan_right':
         return {
-          startScale: 1.08,
-          endScale: 1.08,
-          maxScale: 1.08,
+          startScale: baseScale * 1.08,
+          endScale: baseScale * 1.08,
+          maxScale: baseScale * 1.08,
           panPercent: panTravel,
           tiltPercent: 0,
           isAnimated: true,
@@ -75,9 +83,9 @@ export class MotionApplier {
       case 'tilt_up':
       case 'tilt_down':
         return {
-          startScale: 1.08,
-          endScale: 1.08,
-          maxScale: 1.08,
+          startScale: baseScale * 1.08,
+          endScale: baseScale * 1.08,
+          maxScale: baseScale * 1.08,
           panPercent: 0,
           tiltPercent: panTravel,
           isAnimated: true,
@@ -85,7 +93,7 @@ export class MotionApplier {
 
       case 'static':
       default: {
-        const scale = cropMode === 'punch_in' ? 1.15 : 1.0;
+        const scale = baseScale;
         return {
           startScale: scale,
           endScale: scale,

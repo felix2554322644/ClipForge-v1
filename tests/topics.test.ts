@@ -173,8 +173,9 @@ test('TopicSystem: Gemini AI generation creates fresh topic when available with 
   const mockGemini = new GeminiClient({
     customRunner: async (_label, prompt) => {
       apiCallCount++;
+      const promptStr = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
       // Verify prompt enforces criteria
-      assert.ok(prompt.includes('CRITERIA:'), 'Prompt must specify criteria');
+      assert.ok(promptStr.includes('CRITERIA:'), 'Prompt must specify criteria');
       return JSON.stringify({
         topic: 'Why Time Moves Slower at the Center of the Earth',
         category: 'Physics',
@@ -221,9 +222,10 @@ test('TopicSystem: Selected topic reaches the research pipeline correctly', asyn
   let capturedTopic = '';
   const mockGemini = new GeminiClient({
     customRunner: async (_label, prompt) => {
-      if (prompt.includes('Analyze the topic:')) {
+      const promptStr = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
+      if (promptStr.includes('Analyze the topic:')) {
         // Extract topic from prompt
-        const match = prompt.match(/Analyze the topic:\s*"([^"]+)"/);
+        const match = promptStr.match(/Analyze the topic:\s*"([^"]+)"/);
         if (match) {
           capturedTopic = match[1];
         }

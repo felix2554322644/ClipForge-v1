@@ -42,7 +42,9 @@ export interface PatternInterrupt {
 export type CaptionTreatmentType =
   | 'standard'
   | 'hook_pop'
+  | 'concept_emphasis'
   | 'statistic_callout'
+  | 'reveal'
   | 'reveal_pop'
   | 'payoff_impact';
 
@@ -157,6 +159,8 @@ export interface CandidateBrollAsset {
   targetShotId?: string;
   thumbnailUrl?: string;
   previewUrl?: string;
+  thumbnailBase64?: string;
+  thumbnailMimeType?: string;
   relevanceScore: number;
   semanticDescription?: string;
   visualReference?: CandidateVisualReference;
@@ -214,6 +218,7 @@ export interface AIDirectorInput {
   script?: import('./pipeline').ScriptOutput;
   narrationText: string;
   narrationDurationSeconds: number;
+  storyboard?: import('./storyboard').Storyboard;
   scenePlan?: import('./pipeline').ScenePlanOutput;
   candidateBoard: BrollCandidateBoard;
   previouslySelectedAssets?: string[];

@@ -18,6 +18,7 @@ import {
   BrollCandidateBoard,
   CandidateBrollAsset,
   EditorialPlan,
+  Storyboard,
 } from '../../types/pipeline';
 import { PipelineLogger } from '../logging/logger';
 import { CONFIG } from '../../config/index';
@@ -152,14 +153,16 @@ export interface BrollSearcherOptions {
 }
 
 export class BrollSearcher {
+  private logger: PipelineLogger;
   private providers: BrollProvider[];
   private cache: BrollCache;
   private customDownloader?: (url: string, destPath: string) => Promise<boolean> | boolean;
 
   constructor(
-    private logger: PipelineLogger,
+    logger?: PipelineLogger,
     customProvidersOrOptions?: BrollProvider[] | BrollSearcherOptions
   ) {
+    this.logger = logger || new PipelineLogger();
     if (Array.isArray(customProvidersOrOptions)) {
       this.providers =
         customProvidersOrOptions.length > 0
@@ -533,32 +536,64 @@ export class BrollSearcher {
    * Builds the comprehensive B-Roll Candidate Board for the AI Editorial Director.
    * Gathers scored candidate assets from active providers (Pexels, Pixabay)
    * along with guaranteed procedural options for each planned scene and shot.
+   * Accepts either PlannedScene[] or Storyboard.
    */
   async buildCandidateBoard(
-    scenes: PlannedScene[],
+    scenesOrStoryboard: PlannedScene[] | Storyboard,
     options?: { previouslySelectedAssets?: string[] }
   ): Promise<BrollCandidateBoard> {
-    const shotsToProcess: { sceneIndex: number; shot: PlannedShot }[] = [];
+    const shotsToProcess: {
+      sceneIndex: number;
+      shotId: string;
+      durationSeconds: number;
+      queries: string[];
+      visualSubject?: string;
+      action?: string;
+      environment?: string;
+      visualPurpose?: string;
+      preferredVisualType?: string;
+    }[] = [];
 
-    for (const scene of scenes) {
-      if (scene.shots && scene.shots.length > 0) {
-        for (const shot of scene.shots) {
-          shotsToProcess.push({ sceneIndex: scene.index, shot });
+    if (Array.isArray(scenesOrStoryboard)) {
+      for (const scene of scenesOrStoryboard) {
+        if (scene.shots && scene.shots.length > 0) {
+          for (const shot of scene.shots) {
+            shotsToProcess.push({
+              sceneIndex: scene.index,
+              shotId: shot.id,
+              durationSeconds: shot.durationSeconds,
+              queries:
+                shot.brollQueries && shot.brollQueries.length > 0
+                  ? shot.brollQueries
+                  : scene.brollQuery || ['deep space galaxy'],
+            });
+          }
+        } else {
+          shotsToProcess.push({
+            sceneIndex: scene.index,
+            shotId: `scene_${scene.index}_shot_0`,
+            durationSeconds: scene.durationSeconds,
+            queries: scene.brollQuery || ['deep space galaxy'],
+          });
         }
-      } else {
-        const fallbackShot: PlannedShot = {
-          id: `scene_${scene.index}_shot_0`,
-          sceneIndex: scene.index,
-          shotIndex: 0,
-          narrationClause: scene.narration,
-          durationSeconds: scene.durationSeconds,
-          pacingType: 'normal',
-          brollQueries: scene.brollQuery || ['deep space galaxy'],
-          motionEffect: scene.motionEffect || 'zoom_in',
-          transition: 'cut',
-          captionText: scene.captionText || scene.narration,
-        };
-        shotsToProcess.push({ sceneIndex: scene.index, shot: fallbackShot });
+      }
+    } else if (scenesOrStoryboard && Array.isArray((scenesOrStoryboard as Storyboard).shots)) {
+      const sb = scenesOrStoryboard as Storyboard;
+      for (const shot of sb.shots) {
+        shotsToProcess.push({
+          sceneIndex: shot.sceneIndex,
+          shotId: shot.shotId,
+          durationSeconds: shot.durationSeconds,
+          queries:
+            shot.searchQueries && shot.searchQueries.length > 0
+              ? shot.searchQueries
+              : [shot.visualSubject, 'deep space galaxy'],
+          visualSubject: shot.visualSubject,
+          action: shot.action,
+          environment: shot.environment,
+          visualPurpose: shot.visualPurpose,
+          preferredVisualType: shot.preferredVisualType,
+        });
       }
     }
 
@@ -568,7 +603,7 @@ export class BrollSearcher {
 
     this.logger.stage(
       'BROLL_SELECTION',
-      `Assembling B-Roll Candidate Board across ${shotsToProcess.length} shots (${availableProviders.join(', ') || 'Procedural only'})`
+      `Assembling B-Roll Candidate Board across ${shotsToProcess.length} visual shots (${availableProviders.join(', ') || 'Procedural only'})`
     );
 
     const candidates: CandidateBrollAsset[] = [];
@@ -577,11 +612,11 @@ export class BrollSearcher {
     const previouslySelected = new Set(options?.previouslySelectedAssets || []);
 
     for (let i = 0; i < shotsToProcess.length; i++) {
-      const { sceneIndex, shot } = shotsToProcess[i];
-      const targetDuration = shot.durationSeconds;
+      const shotItem = shotsToProcess[i];
+      const targetDuration = shotItem.durationSeconds;
       const initialQueries =
-        shot.brollQueries && shot.brollQueries.length > 0
-          ? shot.brollQueries
+        shotItem.queries && shotItem.queries.length > 0
+          ? shotItem.queries
           : ['deep space galaxy', 'space astronomy'];
 
       const expandedQueries = this.expandQueries(initialQueries);
@@ -629,19 +664,22 @@ export class BrollSearcher {
 
               seenCandidateKeys.add(candidateKey);
 
-              const visRef = VisualIntelligenceService.evaluateVisualReference({
-                provider: item.provider,
-                tags: item.tags,
-                queryUsed: query,
-                semanticDescription: `${item.provider.toUpperCase()} candidate matching "${query}"`,
-                thumbnailUrl: item.thumbnailUrl,
-                previewUrl: item.previewUrl,
-                width: item.width,
-                height: item.height,
-                aspectRatio: item.aspectRatio,
-                nativeVertical: item.nativeVertical,
-                relevanceScore: evaluation.score,
-              });
+              const visRef = VisualIntelligenceService.evaluateVisualReference(
+                {
+                  provider: item.provider,
+                  tags: item.tags,
+                  queryUsed: query,
+                  semanticDescription: `${item.provider.toUpperCase()} candidate matching "${query}"`,
+                  thumbnailUrl: item.thumbnailUrl,
+                  previewUrl: item.previewUrl,
+                  width: item.width,
+                  height: item.height,
+                  aspectRatio: item.aspectRatio,
+                  nativeVertical: item.nativeVertical,
+                  relevanceScore: evaluation.score,
+                },
+                shotItem.visualSubject || query
+              );
 
               candidates.push({
                 id: candidateKey,
@@ -656,8 +694,8 @@ export class BrollSearcher {
                 nativeVertical: item.nativeVertical,
                 tags: item.tags || [],
                 queryUsed: query,
-                targetSceneIndex: sceneIndex,
-                targetShotId: shot.id,
+                targetSceneIndex: shotItem.sceneIndex,
+                targetShotId: shotItem.shotId,
                 thumbnailUrl: item.thumbnailUrl,
                 previewUrl: item.previewUrl,
                 relevanceScore: evaluation.score,
@@ -672,10 +710,10 @@ export class BrollSearcher {
       }
 
       // Always supply a guaranteed procedural fallback candidate for this shot
-      const procId = `proc_${shot.id}`;
+      const procId = `proc_${shotItem.shotId}`;
       if (!seenCandidateKeys.has(procId)) {
         seenCandidateKeys.add(procId);
-        const theme = initialQueries[0] || 'space galaxy';
+        const theme = shotItem.visualSubject || initialQueries[0] || 'space galaxy';
         const procVis = VisualIntelligenceService.evaluateVisualReference({
           provider: 'procedural',
           tags: [theme, 'procedural', 'synthesized', 'motion graphics'],
@@ -691,7 +729,7 @@ export class BrollSearcher {
         candidates.push({
           id: procId,
           provider: 'procedural',
-          providerAssetId: shot.id,
+          providerAssetId: shotItem.shotId,
           downloadUrl: `procedural://${encodeURIComponent(theme)}`,
           durationSeconds: Math.max(targetDuration + 2.0, 6.0),
           width: CONFIG.TARGET_WIDTH,
@@ -700,8 +738,8 @@ export class BrollSearcher {
           nativeVertical: true,
           tags: [theme, 'procedural', 'synthesized'],
           queryUsed: theme,
-          targetSceneIndex: sceneIndex,
-          targetShotId: shot.id,
+          targetSceneIndex: shotItem.sceneIndex,
+          targetShotId: shotItem.shotId,
           relevanceScore: 70,
           semanticDescription: `Procedurally generated 1080x1920 vertical visual for theme "${theme}"`,
           visualReference: procVis,

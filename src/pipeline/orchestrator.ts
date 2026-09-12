@@ -8,6 +8,7 @@ import { ScriptwriterService } from '../services/scripting/scriptwriter';
 import { PiperNarrationEngine } from '../services/narration/piper';
 import { NarrationPreprocessor } from '../services/narration/textPreprocessor';
 import { CaptionEngine } from '../services/captions/captionEngine';
+import { AIStoryboardService } from '../services/storyboard/storyboardService';
 import { ScenePlanner } from '../services/scenes/planner';
 import { BrollSearcher } from '../services/broll/searcher';
 import { EditorialEngine } from '../services/editorial/editorialEngine';
@@ -28,6 +29,7 @@ export class VideoPipelineOrchestrator {
   private scriptwriter: ScriptwriterService;
   private narrationEngine: PiperNarrationEngine;
   private captionEngine: CaptionEngine;
+  private storyboardService: AIStoryboardService;
   private scenePlanner: ScenePlanner;
   private brollSearcher: BrollSearcher;
   private editorialEngine: EditorialEngine;
@@ -39,7 +41,8 @@ export class VideoPipelineOrchestrator {
   constructor(
     geminiClient?: GeminiClient,
     topicManager?: TopicManager,
-    editorialDirector?: AIDirectorService
+    editorialDirector?: AIDirectorService,
+    storyboardService?: AIStoryboardService
   ) {
     this.logger = new PipelineLogger();
     this.gemini = geminiClient || new GeminiClient();
@@ -50,6 +53,12 @@ export class VideoPipelineOrchestrator {
     this.scriptwriter = new ScriptwriterService(this.gemini, this.logger);
     this.narrationEngine = new PiperNarrationEngine(this.logger);
     this.captionEngine = new CaptionEngine(this.logger);
+    this.storyboardService =
+      storyboardService ||
+      new AIStoryboardService({
+        geminiClient: this.gemini,
+        logger: this.logger,
+      });
     this.scenePlanner = new ScenePlanner(this.logger);
     this.brollSearcher = new BrollSearcher(this.logger);
     this.editorialEngine = new EditorialEngine(this.logger);
@@ -136,7 +145,24 @@ export class VideoPipelineOrchestrator {
       );
       this.saveArtifact(jobDir, ARTIFACT_FILES.CAPTIONS_JSON, captions);
 
-      // 4. Beat-Level Scene Planning
+      const videoFormat =
+        (options?.profile === 'long' || job.profile === 'long') ? 'long' : 'short';
+
+      // 4. AI Storyboard + Visual Intent Generation
+      job.currentStage = 'STORYBOARD';
+      job.progressPercent = 50;
+      this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
+
+      const storyboard = await this.storyboardService.generateStoryboard({
+        script,
+        narrationText: combinedNarrationText,
+        narrationDurationSeconds: narrationArtifact.durationSeconds,
+        format: videoFormat,
+        nicheProfile: CLIPFORGE_NICHE_PROFILE,
+      });
+      this.saveArtifact(jobDir, ARTIFACT_FILES.STORYBOARD, storyboard);
+
+      // 4b. Beat-Level Scene Planning (Backward-compatible artifact)
       job.currentStage = 'SCENE_PLANNING';
       job.progressPercent = 55;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
@@ -145,12 +171,12 @@ export class VideoPipelineOrchestrator {
       scenePlan.captions = captions;
       this.saveArtifact(jobDir, ARTIFACT_FILES.SCENE_PLAN, scenePlan);
 
-      // 5. Multi-Shot B-Roll Candidate Board Assembly
+      // 5. Multi-Shot B-Roll Candidate Board Assembly (Fed by Storyboard Visual Intent)
       job.currentStage = 'BROLL_SELECTION';
       job.progressPercent = 70;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
       const candidateBoard = await this.brollSearcher.buildCandidateBoard(
-        scenePlan.scenes
+        storyboard
       );
       this.saveArtifact(jobDir, ARTIFACT_FILES.CANDIDATE_BOARD, candidateBoard);
 
@@ -159,9 +185,6 @@ export class VideoPipelineOrchestrator {
       job.progressPercent = 75;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
 
-      const videoFormat =
-        (options?.profile === 'long' || job.profile === 'long') ? 'long' : 'short';
-
       const editorialPlan = await this.editorialDirector.directVideo({
         nicheProfile: CLIPFORGE_NICHE_PROFILE,
         format: videoFormat,
@@ -169,6 +192,7 @@ export class VideoPipelineOrchestrator {
         script,
         narrationText: combinedNarrationText,
         narrationDurationSeconds: narrationArtifact.durationSeconds,
+        storyboard,
         scenePlan,
         candidateBoard,
       });

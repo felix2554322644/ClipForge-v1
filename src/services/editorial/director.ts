@@ -3,6 +3,7 @@ import { PipelineLogger } from '../logging/logger';
 import { EditorialEngine } from './editorialEngine';
 import { AIDirectorValidator } from './validator';
 import { VisualIntelligenceService } from './visualIntelligence';
+import { VisualGroundingService } from './visualGrounding';
 import {
   AIDirectorInput,
   EditorialPlan,
@@ -22,6 +23,7 @@ export interface AIDirectorOptions {
   geminiClient?: GeminiClient;
   deterministicEngine?: EditorialEngine;
   validator?: AIDirectorValidator;
+  visualGrounding?: VisualGroundingService;
   logger?: PipelineLogger;
 }
 
@@ -29,12 +31,14 @@ export class AIDirectorService {
   private gemini: GeminiClient;
   private deterministicEngine: EditorialEngine;
   private validator: AIDirectorValidator;
+  private visualGrounding: VisualGroundingService;
   private logger?: PipelineLogger;
 
   constructor(options: AIDirectorOptions = {}) {
     this.gemini = options.geminiClient || new GeminiClient();
     this.deterministicEngine = options.deterministicEngine || new EditorialEngine(options.logger);
     this.validator = options.validator || new AIDirectorValidator();
+    this.visualGrounding = options.visualGrounding || new VisualGroundingService({ logger: options.logger });
     this.logger = options.logger;
   }
 
@@ -55,10 +59,23 @@ export class AIDirectorService {
     // If Gemini is available, attempt the AI Director creative decision pass
     if (this.gemini.isAvailable()) {
       try {
-        const prompt = this.buildDirectorPrompt(input, nicheProfile, formatProfile);
-        this.logger?.info(`Dispatching AI Director prompt to Gemini (${prompt.length} chars)...`);
+        // Phase 10: Acquire lightweight thumbnail image frames for multimodal visual grounding
+        const framesAcquired = await this.visualGrounding.acquireFramesForCandidateBoard(input.candidateBoard);
+        const hasFrames = framesAcquired > 0 || input.candidateBoard.candidates.some((c) => Boolean(c.thumbnailBase64));
 
-        const rawResponse = await this.gemini.generateJson<any>(prompt);
+        let rawResponse: any;
+
+        if (hasFrames) {
+          this.logger?.info(
+            `Dispatching multimodal AI Director prompt with real visual frame grounding (${framesAcquired} images)...`
+          );
+          const multimodalContents = this.visualGrounding.buildMultimodalContents(input, nicheProfile, formatProfile);
+          rawResponse = await this.gemini.generateJson<any>(multimodalContents);
+        } else {
+          const prompt = this.buildDirectorPrompt(input, nicheProfile, formatProfile);
+          this.logger?.info(`Dispatching text-only AI Director prompt to Gemini (${prompt.length} chars)...`);
+          rawResponse = await this.gemini.generateJson<any>(prompt);
+        }
 
         // Deterministically validate and sanitize the AI Director's output
         const validatedPlan = this.validator.validateAndSanitize(rawResponse, input);
@@ -101,6 +118,74 @@ export class AIDirectorService {
   public executeDeterministicFallback(input: AIDirectorInput): EditorialPlan {
     this.logger?.info('Executing deterministic fallback editorial engine...');
     const formatProfile = getFormatProfile(input.format);
+
+    // If storyboard is available, create decisions directly aligned with storyboard visual beats
+    if (input.storyboard && input.storyboard.shots.length > 0) {
+      const shots = input.storyboard.shots;
+      const decisions = shots.map((sh, i) => {
+        // Find candidate matching this shot ID or scene index
+        const candidate =
+          input.candidateBoard.candidates.find((c) => c.targetShotId === sh.shotId) ||
+          input.candidateBoard.candidates.find((c) => c.targetSceneIndex === sh.sceneIndex) ||
+          input.candidateBoard.candidates[i % input.candidateBoard.candidates.length] || {
+            id: 'proc_fallback',
+            downloadUrl: '',
+            durationSeconds: 10.0,
+            width: 1080,
+            height: 1920,
+          };
+
+        const inPoint = 0;
+        const outPoint = Math.min(candidate.durationSeconds || 10.0, sh.durationSeconds);
+        const vis = candidate.visualReference || VisualIntelligenceService.evaluateVisualReference(candidate);
+
+        let role: 'hook' | 'fact' | 'curiosity' | 'escalation' | 'payoff' | 'conclusion' = 'fact';
+        if (sh.visualPurpose === 'hook_grab' || i === 0) role = 'hook';
+        else if (sh.visualPurpose === 'closing_call_to_action' || i === shots.length - 1) role = 'conclusion';
+        else if (sh.visualPurpose === 'mechanism_explanation') role = 'fact';
+        else if (sh.visualPurpose === 'mystery_escalation') role = 'curiosity';
+        else if (sh.visualPurpose === 'emotional_payoff') role = 'payoff';
+
+        return {
+          shotId: sh.shotId,
+          sceneIndex: sh.sceneIndex,
+          shotIndex: sh.shotIndex,
+          selectedCandidateId: candidate.id,
+          role,
+          narrationClause: sh.narrationClause,
+          durationSeconds: sh.durationSeconds,
+          videoSourcePath: candidate.downloadUrl,
+          sourceDurationSeconds: candidate.durationSeconds,
+          inPoint,
+          outPoint,
+          motionEffect: (sh.suggestedMotionEffect as any) || (i === 0 ? 'punch_in' : i % 2 === 0 ? 'zoom_in' : 'pan_left'),
+          motionIntensity: i === 0 ? ('dramatic' as const) : ('moderate' as const),
+          cropMode: 'standard' as const,
+          transition: (sh.suggestedTransition as any) || ('cut' as const),
+          captionTreatment: i === 0 ? ('hook_pop' as const) : ('standard' as const),
+          editorialReason: `Storyboard visual beat (${sh.visualPurpose}): ${sh.visualSubject}`,
+          visualDescription: vis.visualDescription || sh.visualSubject,
+          pacingWeight: 1.0,
+        };
+      });
+
+      const avgDur = input.targetDurationSeconds / Math.max(1, decisions.length);
+      return {
+        totalDurationSeconds: input.targetDurationSeconds,
+        format: formatProfile.format,
+        decisions,
+        varietyScore: 85,
+        patternInterruptCount: 0,
+        pacingBreakdown: {
+          hookDuration: decisions[0]?.durationSeconds || 2.0,
+          averageShotDuration: Math.round(avgDur * 100) / 100,
+          shotCount: decisions.length,
+          rapidShotsCount: decisions.filter((d) => d.durationSeconds <= 1.8).length,
+          holdsCount: decisions.filter((d) => d.durationSeconds >= 3.0).length,
+          staticHoldsCount: decisions.filter((d) => d.motionEffect === 'static').length,
+        },
+      };
+    }
 
     // If scenePlan and script are available, use the established EditorialEngine
     if (input.scenePlan && input.script) {
@@ -240,6 +325,22 @@ export class AIDirectorService {
       };
     });
 
+    const storyboardSummary = input.storyboard?.shots.map((sh) => ({
+      shotId: sh.shotId,
+      sceneIndex: sh.sceneIndex,
+      narrationClause: sh.narrationClause,
+      timing: `${sh.narrationStart.toFixed(2)}s - ${sh.narrationEnd.toFixed(2)}s (${sh.durationSeconds.toFixed(2)}s)`,
+      visualSubject: sh.visualSubject,
+      action: sh.action,
+      environment: sh.environment,
+      emotion: sh.emotion,
+      framing: sh.framing,
+      cameraMovement: sh.cameraMovement,
+      visualPurpose: sh.visualPurpose,
+      visualPriority: sh.visualPriority,
+      preferredVisualType: sh.preferredVisualType,
+    }));
+
     const scenesSummary = input.scenePlan?.scenes.map((s) => ({
       sceneIndex: s.index,
       narration: s.narration,
@@ -332,8 +433,8 @@ Total Master Narration Audio Duration: ${input.narrationDurationSeconds.toFixed(
 Complete Narration:
 "${input.narrationText}"
 
-Scene Structure:
-${JSON.stringify(scenesSummary, null, 2)}
+Scene / Storyboard Structure:
+${JSON.stringify(storyboardSummary || scenesSummary, null, 2)}
 
 ====================================================
 4. B-ROLL CANDIDATE BOARD (AVAILABLE REAL ASSETS & VISUAL LOOKS)
