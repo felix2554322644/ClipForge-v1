@@ -8,6 +8,7 @@ const ROOT_DIR = process.cwd();
 export const CONFIG = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
   GEMINI_API_KEY_2: process.env.GEMINI_API_KEY_2 || '',
+  GEMINI_API_KEY_3: process.env.GEMINI_API_KEY_3 || '',
   GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
   PEXELS_API_KEY: process.env.PEXELS_API_KEY || '',
   PIXABAY_API_KEY: process.env.PIXABAY_API_KEY || '',
@@ -32,24 +33,35 @@ export const CONFIG = {
 export function validateGeminiConfiguration(): {
   hasPrimary: boolean;
   hasSecondary: boolean;
+  hasTertiary: boolean;
+  activeKeyCount: number;
   model: string;
   warnings: string[];
 } {
   const warnings: string[] = [];
   const hasPrimary = Boolean(CONFIG.GEMINI_API_KEY && CONFIG.GEMINI_API_KEY.trim() !== '');
   const hasSecondary = Boolean(CONFIG.GEMINI_API_KEY_2 && CONFIG.GEMINI_API_KEY_2.trim() !== '');
+  const hasTertiary = Boolean(CONFIG.GEMINI_API_KEY_3 && CONFIG.GEMINI_API_KEY_3.trim() !== '');
+
+  const activeKeyCount = [hasPrimary, hasSecondary, hasTertiary].filter(Boolean).length;
 
   if (!hasPrimary) {
     warnings.push('GEMINI_API_KEY (primary) is not configured.');
   }
 
   if (!hasSecondary) {
-    warnings.push('GEMINI_API_KEY_2 (secondary fallback) is not configured. Failover will be unavailable.');
+    warnings.push('GEMINI_API_KEY_2 (secondary fallback) is not configured.');
+  }
+
+  if (!hasTertiary) {
+    warnings.push('GEMINI_API_KEY_3 (tertiary fallback) is not configured.');
   }
 
   return {
     hasPrimary,
     hasSecondary,
+    hasTertiary,
+    activeKeyCount,
     model: CONFIG.GEMINI_MODEL,
     warnings,
   };

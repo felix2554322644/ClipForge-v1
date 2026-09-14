@@ -24,6 +24,7 @@ export interface AIDirectorOptions {
   deterministicEngine?: EditorialEngine;
   validator?: AIDirectorValidator;
   visualGrounding?: VisualGroundingService;
+  brollSearcher?: any;
   logger?: PipelineLogger;
 }
 
@@ -32,6 +33,7 @@ export class AIDirectorService {
   private deterministicEngine: EditorialEngine;
   private validator: AIDirectorValidator;
   private visualGrounding: VisualGroundingService;
+  private brollSearcher?: any;
   private logger?: PipelineLogger;
 
   constructor(options: AIDirectorOptions = {}) {
@@ -39,6 +41,7 @@ export class AIDirectorService {
     this.deterministicEngine = options.deterministicEngine || new EditorialEngine(options.logger);
     this.validator = options.validator || new AIDirectorValidator();
     this.visualGrounding = options.visualGrounding || new VisualGroundingService({ logger: options.logger });
+    this.brollSearcher = options.brollSearcher;
     this.logger = options.logger;
   }
 
@@ -75,6 +78,55 @@ export class AIDirectorService {
           const prompt = this.buildDirectorPrompt(input, nicheProfile, formatProfile);
           this.logger?.info(`Dispatching text-only AI Director prompt to Gemini (${prompt.length} chars)...`);
           rawResponse = await this.gemini.generateJson<any>(prompt);
+        }
+
+        // Handle SEARCH_AGAIN requests from AI Director (bounded to 1 iteration)
+        const searcher = input.brollSearcher || this.brollSearcher;
+        if (
+          rawResponse &&
+          Array.isArray(rawResponse.decisions) &&
+          searcher &&
+          typeof searcher.searchAdditionalCandidatesForShots === 'function'
+        ) {
+          const searchAgainRequests = rawResponse.decisions.filter(
+            (d: any) =>
+              (d.action === 'SEARCH_AGAIN' || d.selectedCandidateId === 'SEARCH_AGAIN') &&
+              Array.isArray(d.newSearchQueries) &&
+              d.newSearchQueries.length > 0
+          );
+
+          if (searchAgainRequests.length > 0) {
+            this.logger?.info(
+              `AI Director requested SEARCH_AGAIN for ${searchAgainRequests.length} shot(s). Refining candidate board...`
+            );
+            const queriesToRun = searchAgainRequests.map((r: any) => ({
+              shotId: r.shotId,
+              queries: r.newSearchQueries,
+              targetDuration: r.durationSeconds,
+              targetSceneIndex: r.sceneIndex,
+            }));
+
+            const newlyFound = await searcher.searchAdditionalCandidatesForShots(
+              queriesToRun,
+              input.candidateBoard
+            );
+
+            if (newlyFound.length > 0) {
+              await this.visualGrounding.acquireFramesForCandidateBoard(input.candidateBoard);
+              this.logger?.info(
+                `Candidate board enriched with ${newlyFound.length} refined assets. Re-evaluating decisions...`
+              );
+              const retryPrompt = this.buildDirectorPrompt(input, nicheProfile, formatProfile);
+              try {
+                const refreshed = await this.gemini.generateJson<any>(retryPrompt);
+                if (refreshed && Array.isArray(refreshed.decisions) && refreshed.decisions.length > 0) {
+                  rawResponse = refreshed;
+                }
+              } catch (retryErr) {
+                this.logger?.warn(`AI Director refinement prompt failed: ${(retryErr as Error).message}`);
+              }
+            }
+          }
         }
 
         // Deterministically validate and sanitize the AI Director's output
@@ -458,25 +510,31 @@ ${JSON.stringify(input.previouslySelectedAssets || [], null, 2)}
 - Pattern Interrupts: ${JSON.stringify(availablePatternInterrupts)}
 
 ====================================================
-6. DIRECTOR RESPONSIBILITIES & EDITORIAL RULES
+6. DIRECTOR RESPONSIBILITIES & CREATIVE DECISION RULES
 ====================================================
 1. VISUAL LOOK & COMPOSITION INTELLIGENCE:
    - Evaluate the actual appearance ("visualLook", "composition", "movement", "lightingMood") of each candidate.
    - Do NOT just match keywords! Choose visuals whose emotional resonance and composition amplify the spoken words.
    - Shot 1 (The Hook): For short-form, ask: "Would this visual make someone stop scrolling?" Pick an asset with high novelty, unusual scale (e.g. macro or cosmic wide), or striking visual energy.
    - Visual Contrast: Create dynamic contrast between consecutive shots (e.g. cut from a tight macro close-up to a sweeping wide vista, or from calm observation to high visual energy).
-2. TIMING & BOUNDS:
+2. CREATIVE FREEDOM & DECISION ACTIONS:
+   For every visual beat / shot, you have full creative authority:
+   - SELECT: "action": "SELECT", "selectedCandidateId": "EXACT_ID_FROM_CANDIDATE_BOARD", "visualType": "stock".
+   - REJECT & USE CUSTOM VISUAL: If stock footage cannot communicate the concept (e.g. abstract scientific statistics, comparisons, code, key takeaways, or kinetic typography), set "action": "USE_CUSTOM_VISUAL", "visualType": "custom", with "customSceneParams":
+     * Supported types: "kinetic_typography", "statistic_card", "timeline_steps", "comparison_split", "feature_callout", "quote_card", "countdown", "icon_badge", "terminal_code".
+   - REJECT & SEARCH AGAIN: If the concept should be real footage but all current candidates fail to convey it, set "action": "SEARCH_AGAIN" and provide "newSearchQueries": ["refined query 1", "refined query 2"].
+3. TIMING & BOUNDS:
    - For every shot, specify inPoint and outPoint within the chosen asset's durationSeconds.
    - durationSeconds MUST equal (outPoint - inPoint).
    - inPoint must be >= 0. outPoint must be <= candidate.durationSeconds.
    - The SUM of durationSeconds across ALL decisions MUST equal EXACTLY ${input.targetDurationSeconds.toFixed(2)}s.
-3. FORMAT-SPECIFIC EDITORIAL PACING:
+4. FORMAT-SPECIFIC EDITORIAL PACING:
    ${
      profile.format === 'short'
        ? `- SHORT-FORM: Rapid, dynamic curiosity-driven cuts (${profile.shotDurationRange.min}s - ${profile.shotDurationRange.max}s). Opening hook MUST be <= ${profile.hookDurationMax}s. Frequent meaningful visual changes without arbitrary cuts. Retention-first animated captions.`
        : `- LONG-FORM: Structured chapter progression with thoughtful visual holds up to ${profile.visualHoldMaxDuration}s when narrating complex concepts. Wide visual resets at chapter transitions. Restrained captions and pattern interrupts for a cinematic viewing experience.`
    }
-4. ANTI-REPETITION & CONTINUITY SAFEGUARDS:
+5. ANTI-REPETITION & CONTINUITY SAFEGUARDS:
    - NEVER select the exact same candidate asset in two consecutive shots.
    - Do NOT use the exact same composition (e.g. 3 wide shots) consecutively if alternatives exist.
    - Limit runs of the same provider to maintain visual diversity.
@@ -495,6 +553,7 @@ Respond ONLY with a JSON object matching this schema:
       "shotId": "shot_1",
       "sceneIndex": 0,
       "shotIndex": 0,
+      "action": "SELECT",
       "selectedCandidateId": "EXACT_ID_FROM_CANDIDATE_BOARD",
       "narrationClause": "Clause or sentence segment spoken during this shot",
       "inPoint": 0.8,

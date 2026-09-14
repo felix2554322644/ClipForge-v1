@@ -133,10 +133,21 @@ export class AIDirectorValidator {
       const shotIndex = typeof raw.shotIndex === 'number' ? raw.shotIndex : 0;
 
       // 2. Candidate Resolution & Duplicate / Existence Protection
+      const isCustomVisualRequest =
+        raw.visualType === 'custom' ||
+        raw.visualType === 'graphic' ||
+        raw.visualType === 'typography' ||
+        raw.action === 'USE_CUSTOM_VISUAL' ||
+        raw.action === 'CUSTOM_VISUAL' ||
+        Boolean(raw.customSceneParams);
+
       let candidateId = String(raw.selectedCandidateId || raw.candidateAssetId || raw.assetId || '').trim();
       let candidate = candidateMap.get(candidateId);
 
-      if (!candidate) {
+      if (isCustomVisualRequest) {
+        candidateId = candidateId && !candidateMap.has(candidateId) ? candidateId : `custom_${shotId}`;
+        candidate = undefined;
+      } else if (!candidate) {
         this.issues.push({
           field: `decisions[${idx}].selectedCandidateId`,
           issue: `Candidate "${candidateId}" does not exist on candidate board`,
@@ -152,10 +163,10 @@ export class AIDirectorValidator {
         candidateId = candidate ? candidate.id : `proc_${shotId}`;
       }
 
-      // Consecutive identical candidate asset check:
+      // Consecutive identical candidate asset check (for stock assets):
       // Prevent the exact same asset from being cut to in consecutive shots if alternatives exist
       const prevDecision = sanitizedDecisions[sanitizedDecisions.length - 1];
-      if (prevDecision && prevDecision.selectedCandidateId === candidateId && candidates.length > 1) {
+      if (!isCustomVisualRequest && prevDecision && prevDecision.selectedCandidateId === candidateId && candidates.length > 1) {
         const alternative =
           candidates.find(
             (c) => c.id !== candidateId && (!usedCandidateCounts.has(c.id) || usedCandidateCounts.get(c.id)! === 0)
@@ -368,11 +379,35 @@ export class AIDirectorValidator {
         }
       }
 
-      const visualType =
+      let finalVisualType =
         raw.visualType && ['stock', 'procedural', 'custom', 'graphic', 'typography'].includes(raw.visualType)
           ? raw.visualType
+          : isCustomVisualRequest
+          ? 'custom'
           : undefined;
-      const customSceneParams = raw.customSceneParams || undefined;
+
+      let finalCustomSceneParams = raw.customSceneParams || undefined;
+      if (isCustomVisualRequest && (!finalCustomSceneParams || !finalCustomSceneParams.type)) {
+        const headline = narrationClause.length > 50 ? narrationClause.slice(0, 48) + '...' : narrationClause;
+        const words = headline.split(' ');
+        const emphasisWord = words.find((w: string) => w.length > 4) || words[0] || 'CRITICAL';
+
+        if (role === 'statistic') {
+          finalCustomSceneParams = {
+            type: 'statistic_card',
+            statValue: '100%',
+            statLabel: headline,
+            contextNote: editorialReason,
+          };
+        } else {
+          finalCustomSceneParams = {
+            type: 'kinetic_typography',
+            headline,
+            emphasisWord,
+            subtitle: role === 'hook' ? 'THE CORE INSIGHT' : editorialReason,
+          };
+        }
+      }
 
       sanitizedDecisions.push({
         shotId,
@@ -396,8 +431,8 @@ export class AIDirectorValidator {
         pacingWeight,
         visualDescription,
         visualContrastNote,
-        visualType,
-        customSceneParams,
+        visualType: finalVisualType,
+        customSceneParams: finalCustomSceneParams,
       });
     }
 

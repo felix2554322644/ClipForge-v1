@@ -257,24 +257,24 @@ Examine each candidate's ACTUAL IMAGE FRAME and metadata:
     // Concluding instructions with Multimodal Pixel Grounding rules
     const instructionsText = `
 ====================================================
-5. MULTIMODAL VISUAL GROUNDING RULES & PIXEL EVALUATION
+5. MULTIMODAL VISUAL GROUNDING & CREATIVE DECISION RULES
 ====================================================
 1. EVALUATE THE ACTUAL VISUAL PIXELS:
    - For every candidate with an image frame above, evaluate the real visible subjects, environment, lighting, and framing.
-   - REJECT MISLEADING KEYWORD MATCHES: If a candidate matched tags for "neutron star" or "black hole" but the actual image is a cartoon, abstract icon, or unrelated city scene, DO NOT select it for that shot.
+   - REJECT MISLEADING KEYWORD MATCHES: If a candidate matched tags for a concept but the actual image is irrelevant, cartoonish, low-quality, or misleading, DO NOT select it.
    - VISUAL TRUTH OVER METADATA: A candidate with striking, authentic, and semantically accurate imagery MUST beat a candidate that only has keyword matches.
-2. STORYBOARD VISUAL BEAT ALIGNMENT:
-   - Match candidate visuals to the storyboard's visual beat intent:
-     * Shot 1 (Opening Hook): Must feature arresting, high-curiosity imagery that immediately stops scrolling.
-     * Scientific/Mechanism shots: Must show authentic astrophysical phenomena, high-tech instruments, or accurate macro/cosmic scales.
-     * Escalation/Climax shots: Must exhibit high visual energy, dynamic lighting, or dramatic movement.
+2. STORYBOARD VISUAL BEAT ALIGNMENT & CREATIVE FREEDOM:
+   For every visual beat / shot, you have full creative authority:
+   - ACCEPT/SELECT: If a candidate is compelling and conveys the concept, set "action": "SELECT", "selectedCandidateId": "EXACT_ID".
+   - REJECT & CUSTOM VISUAL: If stock footage cannot communicate the concept (e.g. abstract scientific statistics, comparisons, code, key takeaways, or typography), set "action": "USE_CUSTOM_VISUAL" (or "visualType": "custom") with "customSceneParams":
+     * Supported types: "kinetic_typography", "statistic_card", "timeline_steps", "comparison_split", "feature_callout", "quote_card", "countdown", "icon_badge", "terminal_code".
+   - REJECT & SEARCH AGAIN: If the concept should be real footage but all current candidates fail to convey it, set "action": "SEARCH_AGAIN" and provide "newSearchQueries": ["improved query 1", "improved query 2"].
 3. TIMING & DURATION CONTINUITY:
    - For every shot, specify inPoint and outPoint within the chosen asset's durationSeconds.
    - durationSeconds MUST equal (outPoint - inPoint).
    - The SUM of durationSeconds across ALL decisions MUST equal EXACTLY ${input.targetDurationSeconds.toFixed(2)}s.
 4. STRICT ASSET ID INTEGRITY:
-   - You MUST select candidate assets strictly using their exact "id" from the candidate board above.
-   - NEVER invent candidate IDs.
+   - For selected stock footage, select strictly using its exact "id" from the candidate board.
 
 ====================================================
 6. REQUIRED JSON RESPONSE SCHEMA
@@ -289,6 +289,7 @@ Respond ONLY with a JSON object matching this schema:
       "shotId": "shot_1",
       "sceneIndex": 0,
       "shotIndex": 0,
+      "action": "SELECT",
       "selectedCandidateId": "EXACT_ID_FROM_CANDIDATE_BOARD",
       "narrationClause": "Clause or sentence segment spoken during this shot",
       "inPoint": 0.0,
@@ -302,6 +303,8 @@ Respond ONLY with a JSON object matching this schema:
       "captionTreatment": "hook_pop",
       "editorialReason": "Visual grounding shows authentic high-energy spinning stellar plasma",
       "visualDescription": "High-contrast cosmic plasma burst with intense magnetic arcs",
+      "visualType": "stock",
+      "customSceneParams": null,
       "pacingWeight": 1.2
     }
   ]

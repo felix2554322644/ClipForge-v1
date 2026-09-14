@@ -762,6 +762,120 @@ export class BrollSearcher {
   }
 
   /**
+   * Searches targeted additional candidate footage when the AI Director rejects
+   * initial candidates for specific shots and requests SEARCH_AGAIN with refined queries.
+   */
+  async searchAdditionalCandidatesForShots(
+    requests: {
+      shotId: string;
+      queries: string[];
+      targetDuration?: number;
+      targetSceneIndex?: number;
+      visualSubject?: string;
+    }[],
+    existingBoard: BrollCandidateBoard
+  ): Promise<CandidateBrollAsset[]> {
+    this.logger.stage(
+      'BROLL_SELECTION',
+      `Executing AI Director SEARCH_AGAIN refinement for ${requests.length} shot(s)...`
+    );
+
+    const newlyFound: CandidateBrollAsset[] = [];
+    const seenKeys = new Set(existingBoard.candidates.map((c) => c.id));
+
+    for (const req of requests) {
+      const targetDuration = req.targetDuration || 3.0;
+      const expandedQueries = this.expandQueries(req.queries);
+
+      for (const query of expandedQueries) {
+        for (const provider of this.providers) {
+          if (!provider.isAvailable()) continue;
+
+          try {
+            const results = await provider.searchVideos(query, 'portrait');
+            for (const item of results) {
+              if (item.width > item.height && !CONFIG.ALLOW_LANDSCAPE_FALLBACK) {
+                continue;
+              }
+
+              const candidateKey = `${item.provider}_${item.providerAssetId || item.id}`;
+              if (seenKeys.has(candidateKey)) continue;
+              seenKeys.add(candidateKey);
+
+              const evaluation = BrollScorer.evaluateCandidate(
+                {
+                  id: item.id,
+                  provider: item.provider,
+                  providerAssetId: item.providerAssetId,
+                  width: item.width,
+                  height: item.height,
+                  duration: item.durationSeconds,
+                  url: item.downloadUrl,
+                  tags: item.tags,
+                },
+                targetDuration,
+                CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
+                new Set(existingBoard.previouslySelectedAssetIds || []),
+                query
+              );
+
+              if (evaluation.isRejected) continue;
+
+              const visRef = VisualIntelligenceService.evaluateVisualReference(
+                {
+                  provider: item.provider,
+                  tags: item.tags,
+                  queryUsed: query,
+                  semanticDescription: `${item.provider.toUpperCase()} candidate matching refined query "${query}"`,
+                  thumbnailUrl: item.thumbnailUrl,
+                  previewUrl: item.previewUrl,
+                  width: item.width,
+                  height: item.height,
+                  aspectRatio: item.aspectRatio,
+                  nativeVertical: item.nativeVertical,
+                  relevanceScore: evaluation.score,
+                },
+                req.visualSubject || query
+              );
+
+              const candidateAsset: CandidateBrollAsset = {
+                id: candidateKey,
+                provider: item.provider,
+                providerAssetId: item.providerAssetId,
+                sourceUrl: item.sourceUrl,
+                downloadUrl: item.downloadUrl,
+                durationSeconds: item.durationSeconds,
+                width: item.width,
+                height: item.height,
+                aspectRatio: item.aspectRatio,
+                nativeVertical: item.nativeVertical,
+                tags: item.tags || [],
+                queryUsed: query,
+                targetSceneIndex: req.targetSceneIndex ?? 0,
+                targetShotId: req.shotId,
+                thumbnailUrl: item.thumbnailUrl,
+                previewUrl: item.previewUrl,
+                relevanceScore: evaluation.score,
+                semanticDescription: `${item.provider.toUpperCase()} candidate matching "${query}"`,
+                visualReference: visRef,
+              };
+
+              newlyFound.push(candidateAsset);
+              existingBoard.candidates.push(candidateAsset);
+            }
+          } catch (err: any) {
+            this.logger.warn(`Provider ${provider.name} search again query "${query}" failed: ${err.message}`);
+          }
+        }
+      }
+    }
+
+    existingBoard.totalCandidates = existingBoard.candidates.length;
+    this.logger.info(`AI Director SEARCH_AGAIN acquired ${newlyFound.length} new candidates.`);
+    return newlyFound;
+  }
+
+  /**
    * Materializes the AI Director's decisions into concrete video source assets:
    * downloads chosen footage, synthesizes procedural assets, reframes to 9:16 portrait,
    * and binds videoSourcePath directly into the EditorialPlan decisions.

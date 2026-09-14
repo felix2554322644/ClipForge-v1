@@ -223,6 +223,7 @@ export interface AIDirectorInput {
   storyboard?: import('./storyboard').Storyboard;
   scenePlan?: import('./pipeline').ScenePlanOutput;
   candidateBoard: BrollCandidateBoard;
+  brollSearcher?: any;
   previouslySelectedAssets?: string[];
   availableMotions?: EditorialMotion[];
   availableCropModes?: CropMode[];
