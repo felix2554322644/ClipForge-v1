@@ -24,6 +24,7 @@ import {
 } from '../../types/pipeline';
 import { PipelineLogger } from '../logging/logger';
 import { CONFIG } from '../../config/index';
+import { GeminiUsageGovernor, getGlobalGovernor } from '../governor/usageGovernor';
 
 /**
  * Normalizes a source or download URL for canonical comparison.
@@ -152,6 +153,7 @@ export interface BrollSearcherOptions {
   providers?: BrollProvider[];
   cache?: BrollCache;
   downloader?: (url: string, destPath: string) => Promise<boolean> | boolean;
+  governor?: GeminiUsageGovernor;
 }
 
 export class BrollSearcher {
@@ -159,6 +161,7 @@ export class BrollSearcher {
   private providers: BrollProvider[];
   private cache: BrollCache;
   private customDownloader?: (url: string, destPath: string) => Promise<boolean> | boolean;
+  private governor: GeminiUsageGovernor;
 
   constructor(
     logger?: PipelineLogger,
@@ -171,6 +174,7 @@ export class BrollSearcher {
           ? customProvidersOrOptions
           : [new PexelsProvider(), new PixabayProvider()];
       this.cache = new BrollCache();
+      this.governor = getGlobalGovernor();
     } else if (customProvidersOrOptions && typeof customProvidersOrOptions === 'object') {
       this.providers =
         customProvidersOrOptions.providers && customProvidersOrOptions.providers.length > 0
@@ -178,9 +182,11 @@ export class BrollSearcher {
           : [new PexelsProvider(), new PixabayProvider()];
       this.cache = customProvidersOrOptions.cache || new BrollCache();
       this.customDownloader = customProvidersOrOptions.downloader;
+      this.governor = customProvidersOrOptions.governor || getGlobalGovernor();
     } else {
       this.providers = [new PexelsProvider(), new PixabayProvider()];
       this.cache = new BrollCache();
+      this.governor = getGlobalGovernor();
     }
   }
 
@@ -603,15 +609,20 @@ export class BrollSearcher {
       .filter((p) => p.isAvailable())
       .map((p) => p.name);
 
+    const roundInfo = this.governor.recordSearchRound();
+    const maxCandidatesThisRound = roundInfo.allowed ? roundInfo.maxAllowedThisRound : 0;
+    const maxCandidatesTotal = this.governor.getLimits().maxCandidatesTotal;
+
     this.logger.stage(
       'BROLL_SELECTION',
-      `Assembling B-Roll Candidate Board across ${shotsToProcess.length} visual shots (${availableProviders.join(', ') || 'Procedural only'})`
+      `Assembling B-Roll Candidate Board across ${shotsToProcess.length} visual shots (Round quota: ${maxCandidatesThisRound}, Total cap: ${maxCandidatesTotal}, Providers: ${availableProviders.join(', ') || 'Procedural only'})`
     );
 
     const candidates: CandidateBrollAsset[] = [];
     const seenCandidateKeys = new Set<string>();
     const queriesRun: string[] = [];
     const previouslySelected = new Set(options?.previouslySelectedAssets || []);
+    let providerCandidatesFound = 0;
 
     for (let i = 0; i < shotsToProcess.length; i++) {
       const shotItem = shotsToProcess[i];
@@ -623,90 +634,102 @@ export class BrollSearcher {
 
       const expandedQueries = this.expandQueries(initialQueries);
 
-      for (const query of expandedQueries) {
-        queriesRun.push(query);
+      // Only query external stock providers if this round's quota and total limit are not yet reached
+      if (providerCandidatesFound < maxCandidatesThisRound) {
+        for (const query of expandedQueries) {
+          if (providerCandidatesFound >= maxCandidatesThisRound) {
+            break;
+          }
 
-        for (const provider of this.providers) {
-          if (!provider.isAvailable()) continue;
+          queriesRun.push(query);
 
-          try {
-            const results = await provider.searchVideos(query, 'portrait');
+          for (const provider of this.providers) {
+            if (!provider.isAvailable() || providerCandidatesFound >= maxCandidatesThisRound) continue;
 
-            for (const item of results) {
-              // Hard landscape rejection check
-              if (item.width > item.height && !CONFIG.ALLOW_LANDSCAPE_FALLBACK) {
-                continue;
-              }
+            try {
+              const results = await provider.searchVideos(query, 'portrait');
 
-              const candidateKey = `${item.provider}_${item.providerAssetId || item.id}`;
-              if (seenCandidateKeys.has(candidateKey)) {
-                continue;
-              }
+              for (const item of results) {
+                if (providerCandidatesFound >= maxCandidatesThisRound) {
+                  break;
+                }
 
-              const evaluation = BrollScorer.evaluateCandidate(
-                {
-                  id: item.id,
+                // Hard landscape rejection check
+                if (item.width > item.height && !CONFIG.ALLOW_LANDSCAPE_FALLBACK) {
+                  continue;
+                }
+
+                const candidateKey = `${item.provider}_${item.providerAssetId || item.id}`;
+                if (seenCandidateKeys.has(candidateKey)) {
+                  continue;
+                }
+
+                const evaluation = BrollScorer.evaluateCandidate(
+                  {
+                    id: item.id,
+                    provider: item.provider,
+                    providerAssetId: item.providerAssetId,
+                    width: item.width,
+                    height: item.height,
+                    duration: item.durationSeconds,
+                    url: item.downloadUrl,
+                    tags: item.tags,
+                  },
+                  targetDuration,
+                  CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
+                  previouslySelected,
+                  query
+                );
+
+                if (evaluation.isRejected) {
+                  continue;
+                }
+
+                seenCandidateKeys.add(candidateKey);
+                providerCandidatesFound++;
+
+                const visRef = VisualIntelligenceService.evaluateVisualReference(
+                  {
+                    provider: item.provider,
+                    tags: item.tags,
+                    queryUsed: query,
+                    semanticDescription: `${item.provider.toUpperCase()} candidate matching "${query}"`,
+                    thumbnailUrl: item.thumbnailUrl,
+                    previewUrl: item.previewUrl,
+                    width: item.width,
+                    height: item.height,
+                    aspectRatio: item.aspectRatio,
+                    nativeVertical: item.nativeVertical,
+                    relevanceScore: evaluation.score,
+                  },
+                  shotItem.visualSubject || query
+                );
+
+                candidates.push({
+                  id: candidateKey,
                   provider: item.provider,
                   providerAssetId: item.providerAssetId,
-                  width: item.width,
-                  height: item.height,
-                  duration: item.durationSeconds,
-                  url: item.downloadUrl,
-                  tags: item.tags,
-                },
-                targetDuration,
-                CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
-                previouslySelected,
-                query
-              );
-
-              if (evaluation.isRejected) {
-                continue;
-              }
-
-              seenCandidateKeys.add(candidateKey);
-
-              const visRef = VisualIntelligenceService.evaluateVisualReference(
-                {
-                  provider: item.provider,
-                  tags: item.tags,
-                  queryUsed: query,
-                  semanticDescription: `${item.provider.toUpperCase()} candidate matching "${query}"`,
-                  thumbnailUrl: item.thumbnailUrl,
-                  previewUrl: item.previewUrl,
+                  sourceUrl: item.sourceUrl,
+                  downloadUrl: item.downloadUrl,
+                  durationSeconds: item.durationSeconds,
                   width: item.width,
                   height: item.height,
                   aspectRatio: item.aspectRatio,
                   nativeVertical: item.nativeVertical,
+                  tags: item.tags || [],
+                  queryUsed: query,
+                  targetSceneIndex: shotItem.sceneIndex,
+                  targetShotId: shotItem.shotId,
+                  thumbnailUrl: item.thumbnailUrl,
+                  previewUrl: item.previewUrl,
                   relevanceScore: evaluation.score,
-                },
-                shotItem.visualSubject || query
-              );
-
-              candidates.push({
-                id: candidateKey,
-                provider: item.provider,
-                providerAssetId: item.providerAssetId,
-                sourceUrl: item.sourceUrl,
-                downloadUrl: item.downloadUrl,
-                durationSeconds: item.durationSeconds,
-                width: item.width,
-                height: item.height,
-                aspectRatio: item.aspectRatio,
-                nativeVertical: item.nativeVertical,
-                tags: item.tags || [],
-                queryUsed: query,
-                targetSceneIndex: shotItem.sceneIndex,
-                targetShotId: shotItem.shotId,
-                thumbnailUrl: item.thumbnailUrl,
-                previewUrl: item.previewUrl,
-                relevanceScore: evaluation.score,
-                semanticDescription: `${item.provider.toUpperCase()} candidate matching "${query}" (Score: ${evaluation.score}, ${evaluation.reason})`,
-                visualReference: visRef,
-              });
+                  semanticDescription: `${item.provider.toUpperCase()} candidate matching "${query}" (Score: ${evaluation.score}, ${evaluation.reason})`,
+                  visualReference: visRef,
+                });
+              }
+            } catch (err: any) {
+              this.logger.warn(`Provider ${provider.name} query "${query}" failed: ${err.message}`);
             }
-          } catch (err: any) {
-            this.logger.warn(`Provider ${provider.name} query "${query}" failed: ${err.message}`);
           }
         }
       }
@@ -749,8 +772,11 @@ export class BrollSearcher {
       }
     }
 
+    // Register retrieved candidates in Governor
+    this.governor.recordCandidatesRetrieved(providerCandidatesFound);
+
     this.logger.info(
-      `Candidate Board assembled: ${candidates.length} candidate assets available for AI Director`
+      `Candidate Board assembled: ${candidates.length} total candidates (${providerCandidatesFound} stock candidates within round limit, ${candidates.length - providerCandidatesFound} procedural fallbacks)`
     );
 
     return {
@@ -775,25 +801,48 @@ export class BrollSearcher {
     }[],
     existingBoard: BrollCandidateBoard
   ): Promise<CandidateBrollAsset[]> {
+    if (!this.governor.canSearchAgain()) {
+      this.logger.warn(
+        `[GOVERNOR] SEARCH_AGAIN refused: Maximum search rounds (${this.governor.getLimits().maxSearchRounds}) or total candidate budget (${this.governor.getLimits().maxCandidatesTotal}) reached.`
+      );
+      return [];
+    }
+
+    const roundInfo = this.governor.recordSearchRound();
+    if (!roundInfo.allowed || roundInfo.maxAllowedThisRound <= 0) {
+      this.logger.warn(
+        `[GOVERNOR] SEARCH_AGAIN round ${roundInfo.roundNumber} not permitted by budget.`
+      );
+      return [];
+    }
+
+    const maxAllowedNewCandidates = roundInfo.maxAllowedThisRound;
+
     this.logger.stage(
       'BROLL_SELECTION',
-      `Executing AI Director SEARCH_AGAIN refinement for ${requests.length} shot(s)...`
+      `Executing AI Director SEARCH_AGAIN refinement (Round ${roundInfo.roundNumber}/${this.governor.getLimits().maxSearchRounds}, Quota: ${maxAllowedNewCandidates}) for ${requests.length} shot(s)...`
     );
 
     const newlyFound: CandidateBrollAsset[] = [];
     const seenKeys = new Set(existingBoard.candidates.map((c) => c.id));
 
     for (const req of requests) {
+      if (newlyFound.length >= maxAllowedNewCandidates) break;
+
       const targetDuration = req.targetDuration || 3.0;
       const expandedQueries = this.expandQueries(req.queries);
 
       for (const query of expandedQueries) {
+        if (newlyFound.length >= maxAllowedNewCandidates) break;
+
         for (const provider of this.providers) {
-          if (!provider.isAvailable()) continue;
+          if (!provider.isAvailable() || newlyFound.length >= maxAllowedNewCandidates) continue;
 
           try {
             const results = await provider.searchVideos(query, 'portrait');
             for (const item of results) {
+              if (newlyFound.length >= maxAllowedNewCandidates) break;
+
               if (item.width > item.height && !CONFIG.ALLOW_LANDSCAPE_FALLBACK) {
                 continue;
               }
@@ -870,6 +919,7 @@ export class BrollSearcher {
       }
     }
 
+    this.governor.recordCandidatesRetrieved(newlyFound.length);
     existingBoard.totalCandidates = existingBoard.candidates.length;
     this.logger.info(`AI Director SEARCH_AGAIN acquired ${newlyFound.length} new candidates.`);
     return newlyFound;
@@ -1153,6 +1203,7 @@ export class BrollSearcher {
     const expanded = new Set<string>();
 
     for (const q of queries) {
+      if (!q || typeof q !== 'string') continue;
       expanded.add(q);
       const lower = q.toLowerCase();
 

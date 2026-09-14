@@ -25,8 +25,8 @@ export interface QCReport {
 export class FinalQualityControlService {
   private geminiClient: GeminiClient;
 
-  constructor(private logger?: PipelineLogger) {
-    this.geminiClient = new GeminiClient({ logger });
+  constructor(private logger?: PipelineLogger, geminiClient?: GeminiClient) {
+    this.geminiClient = geminiClient || new GeminiClient({ logger });
   }
 
   /**
@@ -162,7 +162,7 @@ Return ONLY valid JSON (no markdown fences or extra text) matching this schema:
 
       parts.push({ text: prompt });
 
-      const responseText = await this.geminiClient.executeWithFailover({ parts });
+      const responseText = await this.geminiClient.executeWithFailover({ parts }, 'qc_review');
       const cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleaned);
 

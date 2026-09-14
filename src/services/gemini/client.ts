@@ -1,5 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
 import { CONFIG } from '../../config/index';
+import {
+  GeminiUsageGovernor,
+  getGlobalGovernor,
+  GeminiOperationType,
+} from '../governor/usageGovernor';
 
 export interface GeminiPart {
   text?: string;
@@ -15,12 +20,16 @@ export interface GeminiClientOptions {
   primaryKey?: string;
   secondaryKey?: string;
   tertiaryKey?: string;
+  primaryProjectId?: string;
+  secondaryProjectId?: string;
+  tertiaryProjectId?: string;
   keys?: string[];
   model?: string;
   maxRetriesPerKey?: number;
   initialBackoffMs?: number;
   backoffMultiplier?: number;
   cooldownMs?: number;
+  governor?: GeminiUsageGovernor;
   logger?: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void };
   customRunner?: (
     keyLabel: any,
@@ -32,7 +41,9 @@ export interface GeminiClientOptions {
 export interface KeyAccount {
   id: string;
   label: string;
+  slotName: string;
   apiKey: string;
+  projectId: string;
   ai?: GoogleGenAI;
   cooldownUntil: number;
   consecutiveFailures: number;
@@ -130,6 +141,7 @@ export class GeminiClient {
   private backoffMultiplier: number;
   private cooldownMs: number;
   private logger?: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void };
+  private governor: GeminiUsageGovernor;
   private customRunner?: (
     keyLabel: any,
     prompt: string,
@@ -140,18 +152,19 @@ export class GeminiClient {
   private nextKeyIndex = 0;
 
   constructor(optionsOrModel?: string | GeminiClientOptions) {
-    let keyStrings: string[] = [];
+    let keySlots: { key: string; projectId: string }[] = [];
     if (typeof optionsOrModel === 'string') {
       this.model = optionsOrModel;
       this.maxRetriesPerKey = 2; // 1 initial + 2 retries = 3 attempts
       this.initialBackoffMs = 500;
       this.backoffMultiplier = 2;
       this.cooldownMs = 60000;
-      keyStrings = [
-        CONFIG.GEMINI_API_KEY,
-        CONFIG.GEMINI_API_KEY_2,
-        CONFIG.GEMINI_API_KEY_3,
-      ].filter((k) => Boolean(k && k.trim().length > 0));
+      this.governor = getGlobalGovernor();
+      keySlots = [
+        { key: CONFIG.GEMINI_API_KEY, projectId: CONFIG.GEMINI_PROJECT_ID || 'project_slot_1' },
+        { key: CONFIG.GEMINI_API_KEY_2, projectId: CONFIG.GEMINI_PROJECT_ID_2 || 'project_slot_2' },
+        { key: CONFIG.GEMINI_API_KEY_3, projectId: CONFIG.GEMINI_PROJECT_ID_3 || 'project_slot_3' },
+      ];
     } else {
       const opts = optionsOrModel || {};
       this.model = opts.model || CONFIG.GEMINI_MODEL;
@@ -160,50 +173,85 @@ export class GeminiClient {
       this.backoffMultiplier = typeof opts.backoffMultiplier === 'number' ? opts.backoffMultiplier : 2;
       this.cooldownMs = typeof opts.cooldownMs === 'number' ? opts.cooldownMs : 60000;
       this.logger = opts.logger;
+      this.governor = opts.governor || getGlobalGovernor();
       this.customRunner = opts.customRunner;
 
       if (opts.keys && opts.keys.length > 0) {
-        keyStrings = opts.keys.filter((k) => Boolean(k && k.trim().length > 0));
+        keySlots = opts.keys.map((k, idx) => ({
+          key: k,
+          projectId: `project_slot_${idx + 1}`,
+        }));
       } else {
-        const explicitKeys = [
-          opts.primaryKey ?? CONFIG.GEMINI_API_KEY,
-          opts.secondaryKey ?? CONFIG.GEMINI_API_KEY_2,
-          opts.tertiaryKey ?? CONFIG.GEMINI_API_KEY_3,
-        ].filter((k) => Boolean(k && k.trim().length > 0));
-        keyStrings = explicitKeys;
+        keySlots = [
+          {
+            key: opts.primaryKey ?? CONFIG.GEMINI_API_KEY,
+            projectId: opts.primaryProjectId || CONFIG.GEMINI_PROJECT_ID || 'project_slot_1',
+          },
+          {
+            key: opts.secondaryKey ?? CONFIG.GEMINI_API_KEY_2,
+            projectId: opts.secondaryProjectId || CONFIG.GEMINI_PROJECT_ID_2 || 'project_slot_2',
+          },
+          {
+            key: opts.tertiaryKey ?? CONFIG.GEMINI_API_KEY_3,
+            projectId: opts.tertiaryProjectId || CONFIG.GEMINI_PROJECT_ID_3 || 'project_slot_3',
+          },
+        ];
       }
     }
 
-    // Initialize Key Accounts for the pool
+    // Initialize 3 Key Accounts for the router pool
+    const slotNames = ['Gemini account slot 1', 'Gemini account slot 2', 'Gemini account slot 3'];
     const labels = ['PRIMARY', 'SECONDARY', 'TERTIARY'];
-    keyStrings.forEach((key, idx) => {
-      const id = `KEY_${idx + 1}`;
-      const label = labels[idx] || `KEY_${idx + 1}`;
-      let ai: GoogleGenAI | undefined;
-      try {
-        ai = new GoogleGenAI({
-          apiKey: key,
-          httpOptions: {
-            headers: {
-              'User-Agent': 'aistudio-build',
-            },
-          },
-        });
-      } catch (err) {
-        this.log(`[GEMINI POOL] Failed to initialize GoogleGenAI for ${label}: ${(err as Error).message}`);
-      }
 
-      this.accounts.push({
-        id,
-        label,
-        apiKey: key,
-        ai,
-        cooldownUntil: 0,
-        consecutiveFailures: 0,
-        totalRequests: 0,
-        totalSuccesses: 0,
-      });
+    keySlots.forEach((slot, idx) => {
+      const slotName = slotNames[idx] || `Gemini account slot ${idx + 1}`;
+      const hasKey = Boolean(slot.key && slot.key.trim().length > 0);
+
+      // Safe logging without exposing secret values
+      this.log(`${slotName}: ${hasKey ? 'configured' : 'not configured'}`);
+
+      if (hasKey) {
+        const id = `KEY_${idx + 1}`;
+        const label = labels[idx] || `KEY_${idx + 1}`;
+        let ai: GoogleGenAI | undefined;
+        try {
+          ai = new GoogleGenAI({
+            apiKey: slot.key,
+            httpOptions: {
+              headers: {
+                'User-Agent': 'aistudio-build',
+              },
+            },
+          });
+        } catch (err) {
+          this.log(`[GEMINI POOL] Failed to initialize GoogleGenAI for ${label}: ${(err as Error).message}`);
+        }
+
+        this.accounts.push({
+          id,
+          label,
+          slotName,
+          apiKey: slot.key,
+          projectId: slot.projectId,
+          ai,
+          cooldownUntil: 0,
+          consecutiveFailures: 0,
+          totalRequests: 0,
+          totalSuccesses: 0,
+        });
+      }
     });
+
+    // Check project-level quota sharing honesty
+    if (this.accounts.length >= 2) {
+      const projectIds = this.accounts.map((a) => a.projectId);
+      const uniqueProjects = new Set(projectIds);
+      if (uniqueProjects.size < this.accounts.length) {
+        this.log(
+          `[GEMINI POOL] Project quota notice: Multiple active accounts share the same Google Cloud project. Gemini quotas are enforced per-project; key rotation alleviates concurrency and per-key throttles, but does not multiply project-level limits.`
+        );
+      }
+    }
   }
 
   getModel(): string {
@@ -247,18 +295,48 @@ export class GeminiClient {
     };
   }
 
+  getGovernor(): GeminiUsageGovernor {
+    return this.governor;
+  }
+
+  getActiveKeyIndex(): number {
+    return this.nextKeyIndex;
+  }
+
+  getKeysRotatedCount(): number {
+    const stats = this.governor.getStats();
+    return Math.max(0, stats.keysUsed.length - 1);
+  }
+
+  getRotationContext(): { keysRotated: number; activeKeyIndex: number } {
+    return {
+      keysRotated: this.getKeysRotatedCount(),
+      activeKeyIndex: this.getActiveKeyIndex(),
+    };
+  }
+
   /**
    * Executes a Gemini request with intelligent account pool rotation, rate-limit cooldown,
    * bounded exponential backoff, and transparent failover across up to 3 independent accounts.
    */
-  async executeWithFailover(promptOrContents: GeminiContents): Promise<string> {
+  async executeWithFailover(
+    promptOrContents: GeminiContents,
+    operation: GeminiOperationType = 'other'
+  ): Promise<string> {
     if (!this.isAvailable()) {
       throw new Error('No Gemini API keys configured.');
     }
 
+    // Check Gemini Usage Governor limit before making API request
+    const governorCheck = this.governor.canMakeRequest(operation);
+    if (!governorCheck.allowed) {
+      this.log(`[GEMINI GOVERNOR] Request blocked for operation "${operation}": ${governorCheck.reason}`);
+      throw new Error(`Gemini budget exhausted: ${governorCheck.reason}`);
+    }
+
     if (this.customRunner) {
       // Mock runner execution for test environments
-      return this.runWithCustomRunner(promptOrContents);
+      return this.runWithCustomRunner(promptOrContents, operation);
     }
 
     const maxCycleRounds = 2; // Allow checking all accounts twice if cooldowns expire
@@ -282,6 +360,7 @@ export class GeminiClient {
           continue;
         }
 
+        this.governor.recordFallback('all_keys_cooldown');
         this.log(`[GEMINI POOL] All ${this.accounts.length} Gemini API keys are rate-limited or cooling down.`);
         throw new Error(`All ${this.accounts.length} configured Gemini API keys (GEMINI_API_KEY pool) failed or are exhausted.`);
       }
@@ -304,12 +383,15 @@ export class GeminiClient {
           account.totalRequests++;
 
           try {
-            this.log(`[GEMINI POOL] Dispatching request using ${account.label} (${account.id}) [attempt ${attempt}/${maxAttempts}]`);
+            this.log(`[GEMINI POOL] Dispatching request using ${account.label} (${account.id}, project: ${account.projectId}) [attempt ${attempt}/${maxAttempts}]`);
             const result = await this.callAiAccount(account, promptOrContents);
 
             account.consecutiveFailures = 0;
             account.totalSuccesses++;
             account.cooldownUntil = 0;
+
+            // Record request in governor upon successful completion
+            this.governor.recordRequest(operation, account.id, account.projectId);
             return result;
           } catch (err) {
             account.consecutiveFailures++;
@@ -323,13 +405,23 @@ export class GeminiClient {
             const isRateLimit = isRateLimitGeminiError(err);
 
             if (isRateLimit) {
-              // Rate limit / 429 encountered: apply temporary cooldown to this account
+              // Rate limit / 429 encountered: record in governor and apply temporary cooldown
+              this.governor.record429(account.id, account.projectId);
               account.cooldownUntil = Date.now() + this.cooldownMs;
               this.log(`[GEMINI POOL] ${account.label} hit rate limit (${reason}). Entering ${this.cooldownMs / 1000}s cooldown. Rotating to next key in pool...`);
+
+              // Honest project quota notice:
+              const otherEligible = this.accounts.filter((a) => a.id !== account.id && a.cooldownUntil <= Date.now());
+              const independentProjectAvailable = otherEligible.some((a) => a.projectId !== account.projectId);
+              if (!independentProjectAvailable && otherEligible.length > 0) {
+                this.log(`[GEMINI POOL] Notice: Remaining fallback accounts share Google Cloud project "${account.projectId}". Quotas are enforced at project level.`);
+              }
+
               // Break inner retry loop to immediately failover to next key in pool
               break;
             }
 
+            this.governor.recordRetry(account.id);
             this.log(`[GEMINI POOL] Transient error with ${account.label} (${reason})`);
             if (attempt < maxAttempts) {
               const delay = this.initialBackoffMs * Math.pow(this.backoffMultiplier, attempt - 1);
@@ -343,6 +435,7 @@ export class GeminiClient {
       }
     }
 
+    this.governor.recordFallback('quota_exhausted');
     throw new Error(
       `All ${this.accounts.length} configured Gemini API keys (GEMINI_API_KEY pool) failed and are exhausted.`
     );
@@ -351,7 +444,22 @@ export class GeminiClient {
   /**
    * Generates JSON output with router failover, automatic schema guidance, and parsing.
    */
-  async generateJson<T>(promptOrContents: GeminiContents, fallbackGenerator?: () => T): Promise<T> {
+  async generateJson<T>(
+    promptOrContents: GeminiContents,
+    fallbackOrOptions?: (() => T) | { temperature?: number; maxOutputTokens?: number; operation?: GeminiOperationType },
+    opArg?: GeminiOperationType
+  ): Promise<T> {
+    let fallbackGenerator: (() => T) | undefined;
+    let operation: GeminiOperationType = opArg || 'other';
+
+    if (typeof fallbackOrOptions === 'function') {
+      fallbackGenerator = fallbackOrOptions;
+    } else if (fallbackOrOptions && typeof fallbackOrOptions === 'object') {
+      if (fallbackOrOptions.operation) {
+        operation = fallbackOrOptions.operation;
+      }
+    }
+
     if (this.isAvailable()) {
       try {
         let contentsToExecute: GeminiContents;
@@ -369,15 +477,19 @@ export class GeminiClient {
           contentsToExecute = promptOrContents;
         }
 
-        const text = await this.executeWithFailover(contentsToExecute);
+        const text = await this.executeWithFailover(contentsToExecute, operation);
 
         const cleaned = text.replace(/```json\s*|\s*```/g, '').trim();
         return JSON.parse(cleaned) as T;
       } catch (err) {
         const errMsg = (err as Error).message || '';
 
-        // If error is exhaustion of keys, STOP THE PIPELINE. Never silently fall back with fake data!
-        if (errMsg.includes('exhausted')) {
+        // If error is exhaustion of keys or governor budget limit, handle gracefully according to policy
+        if (errMsg.includes('exhausted') || errMsg.includes('budget exhausted')) {
+          if (fallbackGenerator && CONFIG.ALLOW_FALLBACKS) {
+            this.governor.recordFallback('quota_exhausted');
+            return fallbackGenerator();
+          }
           throw err;
         }
 
@@ -421,24 +533,34 @@ export class GeminiClient {
     return response.text || '';
   }
 
-  private async runWithCustomRunner(promptOrContents: GeminiContents): Promise<string> {
+  private async runWithCustomRunner(
+    promptOrContents: GeminiContents,
+    operation: GeminiOperationType = 'other'
+  ): Promise<string> {
     const runner = this.customRunner!;
     const labels = ['PRIMARY', 'SECONDARY', 'TERTIARY'];
     let lastErr: any;
 
     for (let i = 0; i < Math.max(1, this.accounts.length || 2); i++) {
       const label = labels[i] || `KEY_${i + 1}`;
+      const accountId = `KEY_${i + 1}`;
+      const projectId = this.accounts[i]?.projectId || `project_slot_${i + 1}`;
       try {
         const text = await runner(label, promptOrContents as any, 1);
+        this.governor.recordRequest(operation, accountId, projectId);
         return text;
       } catch (err) {
         lastErr = err;
+        if (isRateLimitGeminiError(err)) {
+          this.governor.record429(accountId, projectId);
+        }
         if (!isRetryableGeminiError(err)) {
           throw err;
         }
       }
     }
 
+    this.governor.recordFallback('all_keys_cooldown');
     throw lastErr || new Error('All custom runners failed');
   }
 

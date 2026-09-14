@@ -20,6 +20,7 @@ import { AudioPlanner } from '../services/audio/planner';
 import { FfmpegRenderer } from '../services/rendering/ffmpegRenderer';
 import { FfprobeValidator } from '../services/validation/ffprobeValidator';
 import { FinalQualityControlService } from '../services/qc/finalQc';
+import { GeminiUsageGovernor, getGlobalGovernor } from '../services/governor/usageGovernor';
 import { PipelineJob } from '../contracts/job';
 import { ARTIFACT_FILES, getArtifactPath } from '../contracts/artifacts';
 import { TopicManager } from '../services/topics/manager';
@@ -27,6 +28,7 @@ import { TopicManager } from '../services/topics/manager';
 export class VideoPipelineOrchestrator {
   private logger: PipelineLogger;
   private gemini: GeminiClient;
+  private governor: GeminiUsageGovernor;
   private topicManager: TopicManager;
   private researcher: ResearchService;
   private scriptwriter: ScriptwriterService;
@@ -49,10 +51,12 @@ export class VideoPipelineOrchestrator {
     editorialDirector?: AIDirectorService,
     storyboardService?: AIStoryboardService,
     audioMixer?: ProfessionalAudioMixer,
-    qcService?: FinalQualityControlService
+    qcService?: FinalQualityControlService,
+    governor?: GeminiUsageGovernor
   ) {
     this.logger = new PipelineLogger();
-    this.gemini = geminiClient || new GeminiClient();
+    this.gemini = geminiClient || new GeminiClient({ logger: this.logger });
+    this.governor = governor || this.gemini.getGovernor() || getGlobalGovernor();
     this.topicManager =
       topicManager ||
       new TopicManager({ logger: this.logger, geminiClient: this.gemini });
@@ -67,7 +71,7 @@ export class VideoPipelineOrchestrator {
         logger: this.logger,
       });
     this.scenePlanner = new ScenePlanner(this.logger);
-    this.brollSearcher = new BrollSearcher(this.logger);
+    this.brollSearcher = new BrollSearcher(this.logger, { governor: this.governor });
     this.editorialEngine = new EditorialEngine(this.logger);
     this.editorialDirector =
       editorialDirector ||
@@ -75,12 +79,13 @@ export class VideoPipelineOrchestrator {
         geminiClient: this.gemini,
         deterministicEngine: this.editorialEngine,
         logger: this.logger,
+        governor: this.governor,
       });
     this.audioMixer = audioMixer || new ProfessionalAudioMixer(this.logger);
     this.timelineBuilder = new TimelineBuilder(this.logger);
     this.renderer = new FfmpegRenderer(this.logger);
     this.validator = new FfprobeValidator(this.logger);
-    this.qcService = qcService || new FinalQualityControlService(this.logger);
+    this.qcService = qcService || new FinalQualityControlService(this.logger, this.gemini);
   }
 
   async runJob(
@@ -101,6 +106,9 @@ export class VideoPipelineOrchestrator {
 
     this.logger.setLogDirectory(jobDir);
     this.logger.info(`Starting video pipeline job: ${jobId} (mode: ${topicMode}) for topic: "${activeTopic}"`);
+
+    // Reset governor tracking for new production run
+    this.governor.reset();
 
     const job: PipelineJob = {
       id: jobId,
@@ -350,6 +358,17 @@ export class VideoPipelineOrchestrator {
 
       this.logger.error(`❌ Pipeline execution failed: ${job.errorMessage}`);
       throw err;
+    } finally {
+      const rotationContext = this.gemini.getRotationContext();
+      const report = this.governor.generateReportString(rotationContext);
+      console.log('\n' + report + '\n');
+      this.logger.info('\n' + report);
+      try {
+        this.saveArtifact(jobDir, 'gemini-usage-report.json', this.governor.getSummaryReport());
+        fs.writeFileSync(path.join(jobDir, 'gemini-usage-report.txt'), report, 'utf-8');
+      } catch {
+        // non-blocking
+      }
     }
   }
 

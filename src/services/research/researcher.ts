@@ -21,21 +21,25 @@ Return a JSON object with:
 - "visualThemes": array of 4-6 search keywords representing striking visual footage
 - "recommendedPacing": "fast" | "moderate" | "dramatic"`;
 
-    const brief = await this.gemini.generateJson<ResearchBrief>(prompt, () => {
-      this.logger.warn(`Using deterministic research brief fallback for "${topic}".`);
-      return {
-        topic,
-        hook: `Discover the incredible story behind ${topic}.`,
-        coreAngle: `A deep dive exploring ${topic} and why it matters.`,
-        keyFacts: [
-          `Fascinating developments and discoveries have shaped our understanding of ${topic}.`,
-          `Surprising details make ${topic} one of the most intriguing subjects today.`,
-          `Modern research continues to uncover new dimensions about ${topic}.`
-        ],
-        visualThemes: [topic.toLowerCase(), 'cinematic nature', 'science exploration', 'technology'],
-        recommendedPacing: 'fast'
-      };
-    });
+    const brief = await this.gemini.generateJson<ResearchBrief>(
+      prompt,
+      () => {
+        this.logger.warn(`Using deterministic research brief fallback for "${topic}".`);
+        return {
+          topic,
+          hook: `Discover the incredible story behind ${topic}.`,
+          coreAngle: `A deep dive exploring ${topic} and why it matters.`,
+          keyFacts: [
+            `Fascinating developments and discoveries have shaped our understanding of ${topic}.`,
+            `Surprising details make ${topic} one of the most intriguing subjects today.`,
+            `Modern research continues to uncover new dimensions about ${topic}.`,
+          ],
+          visualThemes: [topic.toLowerCase(), 'cinematic nature', 'science exploration', 'technology'],
+          recommendedPacing: 'fast',
+        };
+      },
+      'research'
+    );
 
     this.logger.info(`Research brief synthesized for "${brief.topic}"`);
     return brief;

@@ -43,7 +43,7 @@ export class AIStoryboardService {
         const prompt = this.buildStoryboardPrompt(input, format);
         this.logger?.info(`Dispatching AI Storyboard prompt to Gemini (${prompt.length} chars)...`);
 
-        const rawResponse = await this.gemini.generateJson<any>(prompt);
+        const rawResponse = await this.gemini.generateJson<any>(prompt, { operation: 'storyboard' });
         const validatedStoryboard = this.validator.validateAndSanitize(rawResponse, input);
 
         if (validatedStoryboard && validatedStoryboard.shots.length > 0) {

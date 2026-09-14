@@ -160,7 +160,7 @@ Respond ONLY with valid, raw JSON matching this schema:
       topic?: string;
       category?: string;
       hookAngle?: string;
-    }>(prompt);
+    }>(prompt, { operation: 'topic' });
 
     if (!parsed || !parsed.topic || typeof parsed.topic !== 'string') {
       return null;

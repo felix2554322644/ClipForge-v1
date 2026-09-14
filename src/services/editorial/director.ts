@@ -19,6 +19,8 @@ import {
   getFormatProfile,
 } from './profiles';
 
+import { GeminiUsageGovernor, getGlobalGovernor } from '../governor/usageGovernor';
+
 export interface AIDirectorOptions {
   geminiClient?: GeminiClient;
   deterministicEngine?: EditorialEngine;
@@ -26,6 +28,7 @@ export interface AIDirectorOptions {
   visualGrounding?: VisualGroundingService;
   brollSearcher?: any;
   logger?: PipelineLogger;
+  governor?: GeminiUsageGovernor;
 }
 
 export class AIDirectorService {
@@ -35,12 +38,16 @@ export class AIDirectorService {
   private visualGrounding: VisualGroundingService;
   private brollSearcher?: any;
   private logger?: PipelineLogger;
+  private governor: GeminiUsageGovernor;
 
   constructor(options: AIDirectorOptions = {}) {
-    this.gemini = options.geminiClient || new GeminiClient();
+    this.governor = options.governor || getGlobalGovernor();
+    this.gemini = options.geminiClient || new GeminiClient({ logger: options.logger, governor: this.governor });
     this.deterministicEngine = options.deterministicEngine || new EditorialEngine(options.logger);
     this.validator = options.validator || new AIDirectorValidator();
-    this.visualGrounding = options.visualGrounding || new VisualGroundingService({ logger: options.logger });
+    this.visualGrounding =
+      options.visualGrounding ||
+      new VisualGroundingService({ logger: options.logger, governor: this.governor });
     this.brollSearcher = options.brollSearcher;
     this.logger = options.logger;
   }
@@ -73,11 +80,11 @@ export class AIDirectorService {
             `Dispatching multimodal AI Director prompt with real visual frame grounding (${framesAcquired} images)...`
           );
           const multimodalContents = this.visualGrounding.buildMultimodalContents(input, nicheProfile, formatProfile);
-          rawResponse = await this.gemini.generateJson<any>(multimodalContents);
+          rawResponse = await this.gemini.generateJson<any>(multimodalContents, { operation: 'director_decision' });
         } else {
           const prompt = this.buildDirectorPrompt(input, nicheProfile, formatProfile);
           this.logger?.info(`Dispatching text-only AI Director prompt to Gemini (${prompt.length} chars)...`);
-          rawResponse = await this.gemini.generateJson<any>(prompt);
+          rawResponse = await this.gemini.generateJson<any>(prompt, { operation: 'director_decision' });
         }
 
         // Handle SEARCH_AGAIN requests from AI Director (bounded to 1 iteration)
@@ -118,7 +125,7 @@ export class AIDirectorService {
               );
               const retryPrompt = this.buildDirectorPrompt(input, nicheProfile, formatProfile);
               try {
-                const refreshed = await this.gemini.generateJson<any>(retryPrompt);
+                const refreshed = await this.gemini.generateJson<any>(retryPrompt, { operation: 'director_refinement' });
                 if (refreshed && Array.isArray(refreshed.decisions) && refreshed.decisions.length > 0) {
                   rawResponse = refreshed;
                 }

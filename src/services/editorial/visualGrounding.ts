@@ -10,22 +10,44 @@ import {
 import { GeminiPart } from '../gemini/client';
 import { PipelineLogger } from '../logging/logger';
 import { VisualIntelligenceService } from './visualIntelligence';
+import { GeminiUsageGovernor, getGlobalGovernor } from '../governor/usageGovernor';
+import { CONFIG } from '../../config/index';
 
 export interface VisualGroundingOptions {
   maxThumbnailCandidates?: number;
   fetchTimeoutMs?: number;
   logger?: PipelineLogger;
+  governor?: GeminiUsageGovernor;
 }
 
 export class VisualGroundingService {
   private maxThumbnailCandidates: number;
   private fetchTimeoutMs: number;
   private logger?: PipelineLogger;
+  private governor: GeminiUsageGovernor;
+
+  // In-run cache for candidate frames to prevent re-fetching or re-evaluating duplicate assets
+  private static runFrameCache = new Map<string, { base64: string; mimeType: string }>();
 
   constructor(options: VisualGroundingOptions = {}) {
-    this.maxThumbnailCandidates = options.maxThumbnailCandidates || 16;
+    this.governor = options.governor || getGlobalGovernor();
+    this.maxThumbnailCandidates =
+      options.maxThumbnailCandidates ||
+      this.governor.getLimits().maxCandidateEvaluations ||
+      CONFIG.CLIPFORGE_MAX_CANDIDATE_EVALUATIONS;
     this.fetchTimeoutMs = options.fetchTimeoutMs || 3000;
     this.logger = options.logger;
+  }
+
+  /**
+   * Clears the static run frame cache (useful across separate test runs)
+   */
+  public static clearRunCache(): void {
+    VisualGroundingService.runFrameCache.clear();
+  }
+
+  public static clearFrameCache(): void {
+    VisualGroundingService.clearRunCache();
   }
 
   /**
@@ -35,12 +57,24 @@ export class VisualGroundingService {
   async acquireCandidateFrame(
     candidate: CandidateBrollAsset
   ): Promise<{ base64: string; mimeType: string } | undefined> {
+    const cacheKey = candidate.id || candidate.providerAssetId || candidate.thumbnailUrl || '';
+
+    // 0. Check in-run cache
+    if (cacheKey && VisualGroundingService.runFrameCache.has(cacheKey)) {
+      const cached = VisualGroundingService.runFrameCache.get(cacheKey)!;
+      candidate.thumbnailBase64 = cached.base64;
+      candidate.thumbnailMimeType = cached.mimeType;
+      return cached;
+    }
+
     // 1. Already has base64
     if (candidate.thumbnailBase64) {
-      return {
+      const res = {
         base64: candidate.thumbnailBase64,
         mimeType: candidate.thumbnailMimeType || 'image/jpeg',
       };
+      if (cacheKey) VisualGroundingService.runFrameCache.set(cacheKey, res);
+      return res;
     }
 
     const sourceUrl = candidate.thumbnailUrl || candidate.previewUrl;
@@ -54,7 +88,9 @@ export class VisualGroundingService {
       if (match) {
         candidate.thumbnailMimeType = match[1];
         candidate.thumbnailBase64 = match[2];
-        return { base64: match[2], mimeType: match[1] };
+        const res = { base64: match[2], mimeType: match[1] };
+        if (cacheKey) VisualGroundingService.runFrameCache.set(cacheKey, res);
+        return res;
       }
     }
 
@@ -70,7 +106,9 @@ export class VisualGroundingService {
         const base64 = buffer.toString('base64');
         candidate.thumbnailBase64 = base64;
         candidate.thumbnailMimeType = mimeType;
-        return { base64, mimeType };
+        const res = { base64, mimeType };
+        if (cacheKey) VisualGroundingService.runFrameCache.set(cacheKey, res);
+        return res;
       } catch (err) {
         this.logger?.warn(`Failed to read local thumbnail file ${sourceUrl}: ${(err as Error).message}`);
       }
@@ -107,7 +145,9 @@ export class VisualGroundingService {
           if (base64.length > 50) {
             candidate.thumbnailBase64 = base64;
             candidate.thumbnailMimeType = mimeType;
-            return { base64, mimeType };
+            const finalRes = { base64, mimeType };
+            if (cacheKey) VisualGroundingService.runFrameCache.set(cacheKey, finalRes);
+            return finalRes;
           }
         }
       } catch (err) {
@@ -120,21 +160,46 @@ export class VisualGroundingService {
   }
 
   /**
-   * Acquires thumbnail frames across all candidates on the board concurrently.
+   * Acquires thumbnail frames across candidates on the board, strictly bounded by the
+   * governor's candidate evaluation limit (max 12 evaluations).
    */
   async acquireFramesForCandidateBoard(candidateBoard: BrollCandidateBoard): Promise<number> {
-    const candidates = candidateBoard.candidates.slice(0, this.maxThumbnailCandidates);
-    let acquiredCount = 0;
-
-    const results = await Promise.allSettled(
-      candidates.map(async (c) => {
-        const res = await this.acquireCandidateFrame(c);
-        if (res) acquiredCount++;
-      })
+    const maxAllowed = Math.min(
+      this.maxThumbnailCandidates,
+      this.governor.getLimits().maxCandidateEvaluations
     );
 
-    this.logger?.info(
-      `Visual Grounding: Acquired ${acquiredCount}/${candidates.length} candidate thumbnail frames for multimodal evaluation`
+    // Filter to valid stock candidates (excluding procedural which have synthetic SVG/procedural renderers)
+    const eligibleCandidates = candidateBoard.candidates
+      .filter((c) => c.provider !== 'procedural')
+      .slice(0, maxAllowed);
+
+    let acquiredCount = 0;
+
+    for (const c of eligibleCandidates) {
+      if (this.governor.hasCandidateBeenEvaluated(c.id)) {
+        // Already evaluated in this run, fetch from cache without burning new evaluation count
+        const cached = await this.acquireCandidateFrame(c);
+        if (cached) acquiredCount++;
+        continue;
+      }
+
+      if (!this.governor.canEvaluateCandidate(c.id)) {
+        this.logger?.info?.(
+          `[GOVERNOR] Candidate multimodal evaluation limit reached (${this.governor.getStats().candidateEvaluations}/${this.governor.getLimits().maxCandidateEvaluations}). Skipping thumbnail for ${c.id}`
+        );
+        break;
+      }
+
+      const res = await this.acquireCandidateFrame(c);
+      if (res) {
+        acquiredCount++;
+        this.governor.recordCandidateEvaluation(c.id);
+      }
+    }
+
+    this.logger?.info?.(
+      `Visual Grounding: Acquired and evaluated ${acquiredCount} candidate thumbnail frames (Governor evaluations: ${this.governor.getStats().candidateEvaluations}/${this.governor.getLimits().maxCandidateEvaluations})`
     );
 
     return acquiredCount;
