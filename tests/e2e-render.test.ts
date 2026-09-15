@@ -14,6 +14,9 @@ import { ProfessionalAudioMixer } from '../src/services/audio/mixer';
 import { SelectedBrollScene, ScenePlanOutput } from '../src/types/pipeline';
 
 test('E2E Render: End-to-end micro synthesis, composite render, and validation with burned-in captions', async () => {
+  if (!fs.existsSync(CONFIG.PIPER_PATH)) {
+    CONFIG.ALLOW_FALLBACKS = true;
+  }
   const testDir = path.join(CONFIG.OUTPUT_DIR, 'test_e2e_render');
   if (!fs.existsSync(testDir)) fs.mkdirSync(testDir, { recursive: true });
 

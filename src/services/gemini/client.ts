@@ -5,6 +5,7 @@ import {
   getGlobalGovernor,
   GeminiOperationType,
 } from '../governor/usageGovernor';
+import { GeminiTaskRouter, TaskRouteDecision } from './taskRouter';
 
 export interface GeminiPart {
   text?: string;
@@ -30,6 +31,7 @@ export interface GeminiClientOptions {
   backoffMultiplier?: number;
   cooldownMs?: number;
   governor?: GeminiUsageGovernor;
+  router?: GeminiTaskRouter;
   logger?: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void };
   customRunner?: (
     keyLabel: any,
@@ -142,6 +144,7 @@ export class GeminiClient {
   private cooldownMs: number;
   private logger?: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void };
   private governor: GeminiUsageGovernor;
+  private router: GeminiTaskRouter;
   private customRunner?: (
     keyLabel: any,
     prompt: string,
@@ -165,6 +168,15 @@ export class GeminiClient {
         { key: CONFIG.GEMINI_API_KEY_2, projectId: CONFIG.GEMINI_PROJECT_ID_2 || 'project_slot_2' },
         { key: CONFIG.GEMINI_API_KEY_3, projectId: CONFIG.GEMINI_PROJECT_ID_3 || 'project_slot_3' },
       ];
+      this.router = new GeminiTaskRouter({
+        slotsConfigured: keySlots.map((s, idx) => ({
+          slot: idx + 1,
+          id: `KEY_${idx + 1}`,
+          configured: Boolean(s.key && s.key.trim().length > 0),
+          projectId: s.projectId,
+        })),
+        cooldownMs: this.cooldownMs,
+      });
     } else {
       const opts = optionsOrModel || {};
       this.model = opts.model || CONFIG.GEMINI_MODEL;
@@ -197,6 +209,19 @@ export class GeminiClient {
           },
         ];
       }
+
+      this.router =
+        opts.router ||
+        new GeminiTaskRouter({
+          slotsConfigured: keySlots.map((s, idx) => ({
+            slot: idx + 1,
+            id: `KEY_${idx + 1}`,
+            configured: Boolean(s.key && s.key.trim().length > 0) || Boolean(opts.customRunner),
+            projectId: s.projectId,
+          })),
+          cooldownMs: this.cooldownMs,
+          logger: this.logger,
+        });
     }
 
     // Initialize 3 Key Accounts for the router pool
@@ -339,6 +364,16 @@ export class GeminiClient {
       return this.runWithCustomRunner(promptOrContents, operation);
     }
 
+    const isMultimodal = Array.isArray(promptOrContents)
+      ? promptOrContents.some((p: any) => Boolean(p?.inlineData))
+      : typeof promptOrContents === 'object' && promptOrContents !== null && 'parts' in (promptOrContents as any)
+      ? (promptOrContents as any).parts?.some((p: any) => Boolean(p?.inlineData))
+      : false;
+
+    // Use task router to decide optimal key routing based on task affinity and health
+    const routeDecision = this.router.routeTask(operation, isMultimodal);
+    this.log(`[GEMINI ROUTER] ${routeDecision.reason}`);
+
     const maxCycleRounds = 2; // Allow checking all accounts twice if cooldowns expire
     let cycle = 0;
 
@@ -365,18 +400,21 @@ export class GeminiClient {
         throw new Error(`All ${this.accounts.length} configured Gemini API keys (GEMINI_API_KEY pool) failed or are exhausted.`);
       }
 
-      // Rotate starting account index among eligible accounts to distribute load across accounts
-      const startIndex = this.nextKeyIndex % eligibleAccounts.length;
-      this.nextKeyIndex = (this.nextKeyIndex + 1) % Math.max(1, eligibleAccounts.length);
-
-      const orderedAccounts = [
-        ...eligibleAccounts.slice(startIndex),
-        ...eligibleAccounts.slice(0, startIndex),
-      ];
+      // Order eligible accounts prioritizing the routed key first, then lowest workload
+      const orderedAccounts = [...eligibleAccounts].sort((a, b) => {
+        const slotA = this.accounts.findIndex((acc) => acc.id === a.id);
+        const slotB = this.accounts.findIndex((acc) => acc.id === b.id);
+        const isRouteA = a.id === routeDecision.selectedKeyId;
+        const isRouteB = b.id === routeDecision.selectedKeyId;
+        if (isRouteA && !isRouteB) return -1;
+        if (!isRouteA && isRouteB) return 1;
+        return this.router.calculateWorkloadScore(slotA) - this.router.calculateWorkloadScore(slotB);
+      });
 
       for (const account of orderedAccounts) {
         let attempt = 0;
         const maxAttempts = this.maxRetriesPerKey + 1;
+        const slotIdx = this.accounts.findIndex((a) => a.id === account.id);
 
         while (attempt < maxAttempts) {
           attempt++;
@@ -390,13 +428,24 @@ export class GeminiClient {
             account.totalSuccesses++;
             account.cooldownUntil = 0;
 
-            // Record request in governor upon successful completion
+            const estimatedTokens = Math.max(
+              300,
+              typeof promptOrContents === 'string' ? Math.round(promptOrContents.length / 4) : 500
+            );
+
+            // Record request in governor and router upon successful completion
             this.governor.recordRequest(operation, account.id, account.projectId);
+            if (slotIdx >= 0) {
+              this.router.recordSuccess(slotIdx, operation, isMultimodal, estimatedTokens);
+            }
             return result;
           } catch (err) {
             account.consecutiveFailures++;
 
             if (!isRetryableGeminiError(err)) {
+              if (slotIdx >= 0) {
+                this.router.recordFailure(slotIdx);
+              }
               this.log(`[GEMINI POOL] Non-retryable error with ${account.label}: ${this.sanitize((err as Error).message)}`);
               throw err;
             }
@@ -405,9 +454,12 @@ export class GeminiClient {
             const isRateLimit = isRateLimitGeminiError(err);
 
             if (isRateLimit) {
-              // Rate limit / 429 encountered: record in governor and apply temporary cooldown
+              // Rate limit / 429 encountered: record in governor and router, apply cooldown
               this.governor.record429(account.id, account.projectId);
               account.cooldownUntil = Date.now() + this.cooldownMs;
+              if (slotIdx >= 0) {
+                this.router.record429(slotIdx, this.cooldownMs);
+              }
               this.log(`[GEMINI POOL] ${account.label} hit rate limit (${reason}). Entering ${this.cooldownMs / 1000}s cooldown. Rotating to next key in pool...`);
 
               // Honest project quota notice:
@@ -422,6 +474,9 @@ export class GeminiClient {
             }
 
             this.governor.recordRetry(account.id);
+            if (slotIdx >= 0) {
+              this.router.recordFailure(slotIdx);
+            }
             this.log(`[GEMINI POOL] Transient error with ${account.label} (${reason})`);
             if (attempt < maxAttempts) {
               const delay = this.initialBackoffMs * Math.pow(this.backoffMultiplier, attempt - 1);
@@ -539,20 +594,40 @@ export class GeminiClient {
   ): Promise<string> {
     const runner = this.customRunner!;
     const labels = ['PRIMARY', 'SECONDARY', 'TERTIARY'];
+    const isMultimodal = Array.isArray(promptOrContents)
+      ? promptOrContents.some((p: any) => Boolean(p?.inlineData))
+      : typeof promptOrContents === 'object' && promptOrContents !== null && 'parts' in (promptOrContents as any)
+      ? (promptOrContents as any).parts?.some((p: any) => Boolean(p?.inlineData))
+      : false;
+
+    const routeDecision = this.router.routeTask(operation, isMultimodal);
+    this.log(`[GEMINI ROUTER (CUSTOM RUNNER)] ${routeDecision.reason}`);
+
+    // Build slot order starting with selected slot
+    const totalSlots = Math.max(1, this.accounts.length || 3);
+    const slotOrder: number[] = [routeDecision.selectedSlotIndex];
+    for (let i = 0; i < totalSlots; i++) {
+      if (!slotOrder.includes(i)) slotOrder.push(i);
+    }
+
     let lastErr: any;
 
-    for (let i = 0; i < Math.max(1, this.accounts.length || 2); i++) {
-      const label = labels[i] || `KEY_${i + 1}`;
-      const accountId = `KEY_${i + 1}`;
-      const projectId = this.accounts[i]?.projectId || `project_slot_${i + 1}`;
+    for (const slotIdx of slotOrder) {
+      const label = labels[slotIdx] || `KEY_${slotIdx + 1}`;
+      const accountId = `KEY_${slotIdx + 1}`;
+      const projectId = this.accounts[slotIdx]?.projectId || `project_slot_${slotIdx + 1}`;
       try {
         const text = await runner(label, promptOrContents as any, 1);
         this.governor.recordRequest(operation, accountId, projectId);
+        this.router.recordSuccess(slotIdx, operation, isMultimodal, 500);
         return text;
       } catch (err) {
         lastErr = err;
         if (isRateLimitGeminiError(err)) {
           this.governor.record429(accountId, projectId);
+          this.router.record429(slotIdx);
+        } else {
+          this.router.recordFailure(slotIdx);
         }
         if (!isRetryableGeminiError(err)) {
           throw err;
@@ -562,6 +637,14 @@ export class GeminiClient {
 
     this.governor.recordFallback('all_keys_cooldown');
     throw lastErr || new Error('All custom runners failed');
+  }
+
+  public getTaskRouter(): GeminiTaskRouter {
+    return this.router;
+  }
+
+  public getTaskRoutingReport(): string {
+    return this.router.generateReport();
   }
 
   private sanitize(text: string): string {

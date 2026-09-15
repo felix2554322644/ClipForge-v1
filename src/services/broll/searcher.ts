@@ -9,7 +9,7 @@ import { BrollCache } from './cache';
 import { VideoReframer } from '../media/reframing';
 import { EditingPrimitives } from '../media/primitives';
 import { VisualCohesionService } from '../media/cohesion';
-import { PlaywrightSceneRenderer } from '../visuals/renderer';
+import { RemotionSceneRenderer } from '../remotion/renderer';
 import { VisualIntelligenceService } from '../editorial/visualIntelligence';
 import {
   BrollCandidate,
@@ -952,7 +952,7 @@ export class BrollSearcher {
     const materializedPaths = new Map<string, { finalPath: string; duration: number }>();
 
     const visualCohesion = new VisualCohesionService(this.logger);
-    const sceneRenderer = new PlaywrightSceneRenderer(this.logger);
+    const sceneRenderer = new RemotionSceneRenderer(this.logger);
 
     // Enforce continuity constraints across consecutive shots
     visualCohesion.enforceEditorialContinuity(editorialPlan);

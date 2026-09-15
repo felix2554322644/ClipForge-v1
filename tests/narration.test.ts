@@ -133,6 +133,11 @@ test('Narration Suite: Silence trimming and deterministic audio processing', asy
 });
 
 test('Narration Suite: Piper TTS end-to-end synthesis and duration accuracy', async (t) => {
+  if (!fs.existsSync(CONFIG.PIPER_PATH)) {
+    t.skip(`Piper binary not installed at ${CONFIG.PIPER_PATH}. Skipping hardware TTS test in local test environment.`);
+    return;
+  }
+
   if (!fs.existsSync(TEST_OUT_DIR)) {
     fs.mkdirSync(TEST_OUT_DIR, { recursive: true });
   }

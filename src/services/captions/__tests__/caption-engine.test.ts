@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { CaptionEngine, DEFAULT_CAPTION_THEME } from '../captionEngine';
-import { PlaywrightSceneRenderer } from '../../visuals/renderer';
+import { RemotionSceneRenderer } from '../../visuals/renderer';
 import { AIDirectorValidator } from '../../editorial/validator';
 import { PipelineLogger } from '../../logging/logger';
 
@@ -88,8 +88,8 @@ test('CaptionEngine: deterministic animation and safe positioning defaults', () 
   assert.equal(theme.animationFadeMs, 70, 'Must have fast punchy fade animation duration');
 });
 
-test('PlaywrightSceneRenderer: 9:16 and 16:9 typography scene integration', async () => {
-  const renderer = new PlaywrightSceneRenderer(logger);
+test('RemotionSceneRenderer: 9:16 and 16:9 typography scene integration', async () => {
+  const renderer = new RemotionSceneRenderer(logger);
   
   const verticalResult = await renderer.renderScene({
     sceneParams: {

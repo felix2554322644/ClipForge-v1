@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { VisualSceneValidator } from '../validator';
 import { generateSceneHtml } from '../templates';
-import { PlaywrightSceneRenderer } from '../renderer';
+import { RemotionSceneRenderer } from '../renderer';
 import { CustomSceneParams, CustomSceneType } from '../types';
 import { PipelineLogger } from '../../logging/logger';
 
@@ -117,8 +117,8 @@ test('generateSceneHtml produces valid HTML with 9:16 and 16:9 format handling',
   assert.ok(htmlLandscape.includes('1920px'), 'Landscape format should specify 1920px width');
 });
 
-test('PlaywrightSceneRenderer renders scene deterministically or falls back safely', async () => {
-  const renderer = new PlaywrightSceneRenderer(logger);
+test('RemotionSceneRenderer renders scene deterministically or falls back safely', async () => {
+  const renderer = new RemotionSceneRenderer(logger);
   const params = SAMPLE_SCENES.statistic_card;
 
   const result = await renderer.renderScene({

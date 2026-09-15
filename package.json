@@ -8,7 +8,9 @@
     "build": "vite build",
     "start": "node server.ts",
     "generate": "tsx scripts/cli.ts",
-    "test": "tsx --test tests/governor-and-rotation.test.ts tests/contracts.test.ts tests/narration.test.ts tests/reframing.test.ts tests/motion.test.ts tests/broll-scoring.test.ts tests/broll-selection.test.ts tests/pixabay.test.ts tests/timeline.test.ts tests/captions.test.ts tests/beat-planning.test.ts tests/editorial-engine.test.ts tests/editorial-director.test.ts tests/storyboard.test.ts tests/visual-grounding.test.ts src/services/visuals/__tests__/visual-engine.test.ts src/services/captions/__tests__/caption-engine.test.ts src/services/audio/__tests__/audio-system.test.ts src/services/media/__tests__/cohesion.test.ts src/services/qc/__tests__/final-qc.test.ts tests/production-output.test.ts tests/topics.test.ts tests/foundation-reconciliation.test.ts tests/e2e-render.test.ts",
+    "test": "tsx --test tests/task-router.test.ts tests/remotion.test.ts tests/governor-and-rotation.test.ts tests/contracts.test.ts tests/narration.test.ts tests/reframing.test.ts tests/motion.test.ts tests/broll-scoring.test.ts tests/broll-selection.test.ts tests/pixabay.test.ts tests/timeline.test.ts tests/captions.test.ts tests/beat-planning.test.ts tests/editorial-engine.test.ts tests/editorial-director.test.ts tests/storyboard.test.ts tests/visual-grounding.test.ts src/services/visuals/__tests__/visual-engine.test.ts src/services/captions/__tests__/caption-engine.test.ts src/services/audio/__tests__/audio-system.test.ts src/services/media/__tests__/cohesion.test.ts src/services/qc/__tests__/final-qc.test.ts tests/production-output.test.ts tests/topics.test.ts tests/foundation-reconciliation.test.ts tests/e2e-render.test.ts",
+    "test:task-router": "tsx --test tests/task-router.test.ts",
+    "test:remotion": "tsx --test tests/remotion.test.ts",
     "test:governor": "tsx --test tests/governor-and-rotation.test.ts",
     "test:caption-engine": "tsx --test src/services/captions/__tests__/caption-engine.test.ts",
     "test:audio": "tsx --test src/services/audio/__tests__/audio-system.test.ts",
@@ -27,11 +29,14 @@
   },
   "dependencies": {
     "@google/genai": "^2.21.0",
+    "@remotion/bundler": "^4.0.524",
+    "@remotion/renderer": "^4.0.524",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "lucide-react": "^0.475.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.524"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
@@ -40,7 +45,6 @@
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",
-    "playwright": "^1.63.0",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",

@@ -363,9 +363,14 @@ export class VideoPipelineOrchestrator {
       const report = this.governor.generateReportString(rotationContext);
       console.log('\n' + report + '\n');
       this.logger.info('\n' + report);
+      const taskReport = this.gemini.getTaskRoutingReport();
+      console.log('\n' + taskReport + '\n');
+      this.logger.info('\n' + taskReport);
       try {
         this.saveArtifact(jobDir, 'gemini-usage-report.json', this.governor.getSummaryReport());
         fs.writeFileSync(path.join(jobDir, 'gemini-usage-report.txt'), report, 'utf-8');
+        this.saveArtifact(jobDir, 'gemini-routing-report.json', this.gemini.getTaskRouter().getMetrics());
+        fs.writeFileSync(path.join(jobDir, 'gemini-routing-report.txt'), taskReport, 'utf-8');
       } catch {
         // non-blocking
       }
