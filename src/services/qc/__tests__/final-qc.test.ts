@@ -86,3 +86,38 @@ test('FinalQualityControlService: strict structured JSON schema and issue valida
   const artifactPath = path.join(tmpDir, 'final-qc.json');
   assert.ok(fs.existsSync(artifactPath), 'final-qc.json artifact must be saved');
 });
+
+test('FinalQualityControlService: Correctly flags failing video when quality issues are critical', async () => {
+  const tmpDir = path.join('/tmp', `qc_fail_${Date.now()}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  const dummyVideo = path.join(tmpDir, 'render.mp4');
+  execSync(`ffmpeg -y -f lavfi -i "color=c=red:s=1280x720:d=2.0" -c:v libx264 -t 2.0 "${dummyVideo}"`, { stdio: 'pipe' });
+
+  const qc = new FinalQualityControlService(logger);
+  (qc as any).geminiClient = {
+    isAvailable: () => true,
+    executeWithFailover: async () => {
+      return JSON.stringify({
+        overallScore: 45,
+        pass: false,
+        issues: [
+          {
+            severity: 'critical',
+            timestampSeconds: 0.5,
+            issueCategory: 'visual_relevance',
+            recommendedAction: 'Visual asset does not match topic',
+            repairable: false,
+          },
+        ],
+        summary: 'Critical visual relevance failure.',
+      });
+    },
+  };
+
+  const report = await qc.evaluateVideo(dummyVideo, 2.0);
+  assert.equal(report.overallScore, 45);
+  assert.equal(report.pass, false, 'Report must indicate QC failure');
+  assert.equal(report.issues[0].severity, 'critical');
+});
+

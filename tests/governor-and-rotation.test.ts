@@ -272,3 +272,81 @@ test('BrollSearcher: Respects governor candidate limit when building candidate b
   assert.ok(board.candidates.length <= 6);
   assert.strictEqual(governor.getStats().searchRounds, 1);
 });
+
+test('BrollSearcher: Candidate acquisition supplies candidates for later shots across the entire video', async () => {
+  const governor = new GeminiUsageGovernor();
+  const brollSearcher = new BrollSearcher(undefined, { governor });
+
+  // Storyboard with 6 distinct visual shots
+  const storyboard: Storyboard = {
+    title: 'Multi-shot Video',
+    format: 'short',
+    totalDurationSeconds: 24,
+    totalShots: 6,
+    generatedBy: 'deterministic_fallback',
+    shots: Array.from({ length: 6 }, (_, i) => ({
+      shotId: `shot_${i + 1}`,
+      sceneIndex: i,
+      shotIndex: 0,
+      narrationStart: i * 4,
+      narrationEnd: (i + 1) * 4,
+      durationSeconds: 4,
+      narrationClause: `Narration for beat ${i + 1}`,
+      visualSubject: `subject_${i + 1}`,
+      action: 'action',
+      environment: 'env',
+      emotion: 'curiosity',
+      framing: 'medium',
+      cameraMovement: 'push_in',
+      visualPurpose: i === 0 ? 'hook_grab' : 'mechanism_explanation',
+      visualPriority: 'high',
+      preferredVisualType: 'stock',
+      searchQueries: [`curiosity subject ${i + 1}`, `everyday object ${i + 1}`],
+    })),
+  };
+
+  const board = await brollSearcher.buildCandidateBoard(storyboard);
+
+  // Verify that EVERY shot (including shots 4, 5, 6) has candidate coverage
+  for (let i = 0; i < 6; i++) {
+    const shotId = `shot_${i + 1}`;
+    const shotCandidates = board.candidates.filter(
+      (c) => c.targetShotId === shotId || c.targetSceneIndex === i
+    );
+    assert.ok(
+      shotCandidates.length >= 1,
+      `Shot ${shotId} must have at least one candidate available on the board`
+    );
+  }
+});
+
+test('GeminiClient: 3-Key failover reaches Tertiary key (Slot 3) when Slots 1 and 2 hit 429', async () => {
+  const governor = new GeminiUsageGovernor();
+  const keyAttempts: string[] = [];
+
+  const client = new GeminiClient({
+    keys: ['test-key-1', 'test-key-2', 'test-key-3'],
+    primaryProjectId: 'proj-1',
+    secondaryProjectId: 'proj-2',
+    tertiaryProjectId: 'proj-3',
+    governor,
+    customRunner: async (keyLabel) => {
+      keyAttempts.push(keyLabel);
+      if (keyLabel === 'PRIMARY' || keyLabel === 'SECONDARY') {
+        const err = new Error('Resource has been exhausted (rate limit 429).');
+        (err as any).status = 429;
+        throw err;
+      }
+      return JSON.stringify({ result: 'Success from Tertiary Key (Slot 3)' });
+    },
+  });
+
+  const result = await client.executeWithFailover('Test 3-key failover');
+  assert.match(result, /Success from Tertiary Key/);
+
+  // Verifies all three keys were engaged in sequence
+  assert.deepStrictEqual(keyAttempts, ['PRIMARY', 'SECONDARY', 'TERTIARY']);
+  assert.strictEqual(governor.getStats().rateLimit429Count, 2);
+  assert.strictEqual(governor.getStats().totalRequests, 1);
+});
+

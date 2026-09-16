@@ -34,6 +34,25 @@ export class BrollScorer {
     const usedIds = previousClipIds instanceof Set ? previousClipIds : new Set(previousClipIds);
     const reasons: string[] = [];
 
+    // Procedural fallback placeholders have a fixed deprioritized score (<= 20)
+    // so real captured assets are always preferred unless explicitly selected.
+    if (candidate.provider === 'procedural' || (candidate.url && candidate.url.startsWith('procedural://'))) {
+      return {
+        score: 20,
+        isRejected: false,
+        breakdown: {
+          portrait: 10,
+          aspectRatio: 10,
+          cropSafety: 2,
+          resolution: 5,
+          durationMatch: 3,
+          semantic: 0,
+          uniqueness: 0,
+        },
+        reason: 'Procedural fallback placeholder (deprioritized)',
+      };
+    }
+
     const isLandscape = candidate.width > candidate.height;
     const ratio = candidate.width / candidate.height;
 

@@ -256,6 +256,10 @@ export class VisualIntelligenceService {
    * Calculates aesthetic quality score (0-100) based on resolution, framerate, and native vertical framing.
    */
   private static calculateAestheticScore(candidate: Partial<CandidateBrollAsset>): number {
+    if (candidate.provider === 'procedural' || (candidate.downloadUrl && candidate.downloadUrl.startsWith('procedural://'))) {
+      return 30; // Procedural placeholders should have low aesthetic score compared to real footage
+    }
+
     let score = 70;
 
     const width = candidate.width || 1080;
@@ -288,6 +292,10 @@ export class VisualIntelligenceService {
     composition: CandidateVisualReference['composition'],
     aestheticScore: number
   ): number {
+    if (tokens.includes('procedural') || tokens.includes('synthesized')) {
+      return 30; // Deprioritize procedural placeholders in scroll-stopping novelty
+    }
+
     let score = 65;
 
     // Scale novelty bonus

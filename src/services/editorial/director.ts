@@ -182,16 +182,28 @@ export class AIDirectorService {
     if (input.storyboard && input.storyboard.shots.length > 0) {
       const shots = input.storyboard.shots;
       const decisions = shots.map((sh, i) => {
-        // Find candidate matching this shot ID or scene index
+        // Find candidate matching this shot ID or scene index, prioritizing real stock assets over procedural fallbacks
+        const matchingCandidates = input.candidateBoard.candidates.filter(
+          (c) => c.targetShotId === sh.shotId || c.targetSceneIndex === sh.sceneIndex
+        );
+        const realMatching = matchingCandidates.find((c) => c.provider !== 'procedural');
+        const realCandidates = input.candidateBoard.candidates.filter((c) => c.provider !== 'procedural');
+        const moduloRealCandidate =
+          realCandidates.length > 0 ? realCandidates[i % realCandidates.length] : undefined;
+        const moduloCandidate = input.candidateBoard.candidates[i % input.candidateBoard.candidates.length];
+
         const candidate =
-          input.candidateBoard.candidates.find((c) => c.targetShotId === sh.shotId) ||
-          input.candidateBoard.candidates.find((c) => c.targetSceneIndex === sh.sceneIndex) ||
-          input.candidateBoard.candidates[i % input.candidateBoard.candidates.length] || {
+          realMatching ||
+          matchingCandidates[0] ||
+          moduloRealCandidate ||
+          moduloCandidate || {
             id: 'proc_fallback',
+            provider: 'procedural',
             downloadUrl: '',
             durationSeconds: 10.0,
             width: 1080,
             height: 1920,
+            relevanceScore: 20,
           };
 
         const inPoint = 0;

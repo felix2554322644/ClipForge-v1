@@ -637,3 +637,61 @@ test('B-Roll Selection: Preserves BrollCache while strictly rejecting already-us
     'Cached asset cannot be reused once selected within the same video'
   );
 });
+
+test('B-Roll Selection: Procedural fallback candidates are deprioritized compared to real stock assets', () => {
+  const realCandidate = createCandidate({
+    id: 'pexels_real_asset',
+    provider: 'pexels',
+    tags: ['pencil', 'yellow', 'wood'],
+    width: 1080,
+    height: 1920,
+  });
+
+  const procCandidate = createCandidate({
+    id: 'proc_shot_1',
+    provider: 'procedural',
+    downloadUrl: 'procedural://pencils',
+    tags: ['pencils', 'procedural'],
+    width: 1080,
+    height: 1920,
+  });
+
+  const evalReal = BrollScorer.evaluateCandidate(
+    {
+      id: realCandidate.id,
+      provider: 'pexels',
+      width: realCandidate.width,
+      height: realCandidate.height,
+      duration: realCandidate.durationSeconds,
+      tags: realCandidate.tags,
+    },
+    4.0,
+    1080 / 1920,
+    new Set(),
+    'why are pencils yellow'
+  );
+
+  const evalProc = BrollScorer.evaluateCandidate(
+    {
+      id: procCandidate.id,
+      provider: 'procedural',
+      width: procCandidate.width,
+      height: procCandidate.height,
+      duration: procCandidate.durationSeconds,
+      tags: procCandidate.tags,
+      url: procCandidate.downloadUrl,
+    },
+    4.0,
+    1080 / 1920,
+    new Set(),
+    'why are pencils yellow'
+  );
+
+  assert.ok(evalProc.score <= 20, `Procedural score should be <= 20, got ${evalProc.score}`);
+  assert.ok(evalReal.score >= 50, `Real candidate score should be >= 50, got ${evalReal.score}`);
+  assert.ok(
+    evalReal.score > evalProc.score,
+    'Real stock candidate must strictly outrank procedural placeholder'
+  );
+});
+

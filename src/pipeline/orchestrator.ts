@@ -332,6 +332,13 @@ export class VideoPipelineOrchestrator {
       );
       this.saveArtifact(jobDir, ARTIFACT_FILES.FINAL_QC, qcReport);
 
+      // Gate pipeline completion strictly on Final QC inspection pass
+      if (!qcReport.pass) {
+        throw new Error(
+          `Final Quality Control inspection failed (Score: ${qcReport.overallScore}/100): ${qcReport.summary || 'QC criteria not met'}`
+        );
+      }
+
       // 8b. Export single production deliverable (PART 12: final MP4 only)
       const productionMp4Path = path.join(CONFIG.OUTPUT_DIR, ARTIFACT_FILES.PRODUCTION_MP4);
       fs.copyFileSync(finalVideoPath, productionMp4Path);
