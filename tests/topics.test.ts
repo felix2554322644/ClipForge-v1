@@ -248,3 +248,77 @@ test('TopicSystem: Selected topic reaches the research pipeline correctly', asyn
   assert.equal(capturedTopic, resolved.topic, 'Prompt to researcher must contain resolved topic');
   assert.equal(brief.topic, resolved.topic, 'Research brief topic must match resolved topic');
 });
+
+test('TopicSystem: Everyday Curiosity validation enforces curiosity framing and rejects banned tropes', async () => {
+  const tmpDir = path.join('/tmp', `test_topic_curiosity_val_${Date.now()}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const stateFilePath = path.join(tmpDir, 'topic-state.json');
+
+  const manager = new TopicManager({
+    stateFilePath,
+    enableGemini: false,
+  });
+
+  const state = manager.loadState();
+
+  // Test valid Everyday Curiosity candidate
+  const validProposal = {
+    topic: 'Why Airplane Windows Have Tiny Bleed Holes',
+    category: 'Everyday Design & Engineering',
+    hookAngle: 'Balancing pressure differences between cabin and outside air',
+  };
+  const validResult = manager.validateTopicProposal(validProposal, state);
+  assert.equal(validResult.valid, true, 'Valid everyday curiosity topic must pass validation');
+
+  // Test banned tropes
+  const bannedProposals = [
+    {
+      topic: 'Dark Psychology Tricks That Control People',
+      category: 'Psychology',
+      hookAngle: 'Mind control manipulation',
+    },
+    {
+      topic: 'Quantum Consciousness Secrets They Hide From You',
+      category: 'Esoteric',
+      hookAngle: 'Ancient secret',
+    },
+    {
+      topic: 'Top 5 Shocking Conspiracy Facts You Won\'t Believe',
+      category: 'Sensational',
+      hookAngle: 'Mindblowing shock',
+    },
+  ];
+
+  for (const banned of bannedProposals) {
+    const result = manager.validateTopicProposal(banned, state);
+    assert.equal(result.valid, false, `Must reject banned trope: ${banned.topic}`);
+  }
+
+  // Test short topic rejection
+  const shortProposal = {
+    topic: 'Pens',
+    category: 'Objects',
+    hookAngle: 'Why pen caps exist',
+  };
+  const shortResult = manager.validateTopicProposal(shortProposal, state);
+  assert.equal(shortResult.valid, false, 'Must reject topic shorter than 10 chars');
+
+  // Test semantic overlap rejection with history
+  state.history = [
+    {
+      topic: 'Why Airplane Windows Have Tiny Bleed Holes',
+      category: 'Everyday Design & Engineering',
+      usedAt: new Date().toISOString(),
+      keywords: ['airplane', 'windows', 'bleed', 'holes'],
+    },
+  ];
+
+  const nearDuplicate = {
+    topic: 'Why Airplane Windows Feature Tiny Holes',
+    category: 'Everyday Design & Engineering',
+    hookAngle: 'Pressure regulation in cabin windows',
+  };
+  const dupResult = manager.validateTopicProposal(nearDuplicate, state);
+  assert.equal(dupResult.valid, false, 'Must reject near duplicate with high semantic overlap');
+});
+

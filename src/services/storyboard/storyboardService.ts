@@ -97,7 +97,10 @@ export class AIStoryboardService {
     const maxShotDur = format === 'long' ? '7.0s' : '4.2s';
     const targetShotCount = format === 'long' ? '15-30 shots' : '8-14 shots';
 
-    return `You are a world-class Visual Storyboard Director and Cinematographer specializing in high-retention vertical short-form and documentary video.
+    return `You are a world-class Visual Storyboard Director and Cinematographer specializing in high-retention Everyday Curiosity vertical videos (YouTube Shorts / TikTok / Reels).
+Niche: Everyday Curiosity — the hidden reasons behind ordinary things.
+Core promise: Reveal the surprising, useful, and genuinely interesting reasons behind things people see, use, or experience every day.
+Viewer sentiment: "I've seen this my whole life, but I never knew why."
 
 Your task is to transform a spoken narration script into a structured visual storyboard.
 
@@ -113,26 +116,31 @@ Hook: "${input.script.hook || ''}"
 ${scenesText}
 
 ## Storyboarding Directives:
-1. **Story-Driven Visual Beats (NOT strictly sentence splits)**:
-   - Break the narrative into visual shots based on emotional changes, subject shifts, conceptual reveals, and dramatic escalation.
-   - **Multi-shot narration clauses**: When a single narration sentence or clause describes intense action, contrast, or scale (e.g. "A dead star spinning 700 times a second, packing the mass of the Sun into a city"), split it into multiple visual shots (e.g. Shot 1: Wide establishing magnetar spinning; Shot 2: Extreme close-up of city-scale diameter).
-   - **Multi-clause shots**: When consecutive short or connective clauses occur (e.g. "Look closer. Listen carefully."), group them into ONE continuous visual shot to maintain clean visual continuity.
-2. **Every shot MUST contain these exact 12 metadata fields**:
-   - shotId: Unique string (e.g. "shot_0", "shot_1")
-   - narrationStart: Number in seconds from 0.00
-   - narrationEnd: Number in seconds up to ${input.narrationDurationSeconds.toFixed(2)}
-   - narrationClause: The specific words spoken during this shot
-   - visualSubject: Concrete physical entity, actor, or object in focus (e.g. "Massive radio telescope dish", "Spinning neutron star with plasma arcs")
-   - action: What is physically happening or moving in the frame
-   - environment: Setting, background, lighting, and atmosphere
-   - emotion: Mood / tone (e.g. "electrifying curiosity", "scientific tension", "cosmic awe", "dread")
-   - framing: Camera composition ("extreme close-up", "macro core", "wide establishing", "low-angle dramatic", "medium hero")
-   - cameraMovement: Camera motion intent ("rapid push in", "slow orbital tracking", "dynamic pull out", "static tension")
-   - visualPurpose: Editorial purpose ("hook_grab", "mystery_escalation", "mechanism_explanation", "scale_contrast", "payoff", "closing_call")
-   - visualPriority: "critical" | "high" | "medium" | "supporting"
-   - preferredVisualType: "stock" | "custom" | "graphic" | "typography"
-   - searchQueries: Array of 2 to 4 high-signal, specific search queries optimized for stock video providers (Pexels/Pixabay). AVOID generic terms like "video", "4k", "background", "clip". Use specific noun+action phrases (e.g. ["radio telescope starry sky", "observatory night dish", "astronomy telescope cosmos"]).
-3. **Continuous Timing Coverage**:
+1. **Curiosity-Driven Mini-Investigation Arc**:
+   - Structure visual beats along the narrative arc: HOOK -> QUESTION -> INVESTIGATION -> DISCOVERY -> EXPLANATION -> REVEAL -> PAYOFF.
+   - Pacing is driven by information changes and visual reveals.
+   - The opening shot MUST immediately show or establish the everyday subject and create an intense curiosity gap. No long intros or generic openings.
+2. **Director Creative Decisions**:
+   For every visual beat, decide:
+   - What the viewer should see (concrete physical object, mechanism, hands, tool, environment).
+   - Why that visual is needed (narrative purpose).
+   - What information it communicates to the viewer.
+   - What should be revealed now versus held for later in the investigation.
+   - When real footage is appropriate ('stock') versus when a custom Remotion procedural visual is necessary ('custom') to show an internal cross-section, flow, or comparison.
+3. **Strict Anti-Filler Directive**:
+   - BAN generic filler stock footage, generic "person thinking" clips, floating neurons, abstract particles, and unrelated cinematic footage.
+   - Use concrete objects, places, environments, processes, people, and real-world mechanisms.
+4. **Visual Purpose Taxonomy**:
+   Every shot's visualPurpose must be one of:
+   - "establish" (instantly show the everyday object / environment)
+   - "demonstrate" (hands or tools actively using or testing the object)
+   - "explain" (revealing the physical mechanism or engineering principle)
+   - "contrast" (comparing correct design vs what would happen without it)
+   - "reveal" (the unexpected hidden feature or counter-intuitive fact)
+   - "provide_evidence" (showing real-world tests, cross-sections, or physical proof)
+   - "escalate_curiosity" (drilling deeper into the mechanical mystery)
+   - "payoff" (practical everyday understanding and satisfying conclusion)
+5. **Continuous Timing Coverage**:
    - The first shot MUST start at 0.00.
    - Every shot's narrationStart must match the previous shot's narrationEnd.
    - The final shot's narrationEnd MUST equal ${input.narrationDurationSeconds.toFixed(2)}.
@@ -144,7 +152,7 @@ Respond ONLY with valid, raw JSON:
   "totalDurationSeconds": ${input.narrationDurationSeconds.toFixed(2)},
   "format": "${format}",
   "pacingSummary": "Brief overview of visual cadence and narrative arc",
-  "visualThemes": ["space astronomy", "neutron star", "cosmic radiation"],
+  "visualThemes": ["everyday design", "mechanical detail", "real world object"],
   "shots": [
     {
       "shotId": "shot_0",
@@ -153,18 +161,19 @@ Respond ONLY with valid, raw JSON:
       "narrationStart": 0.0,
       "narrationEnd": 2.2,
       "narrationClause": "Opening hook line",
-      "visualSubject": "Parabolic radio telescope array under starlight",
-      "action": "Dishes pivoting slowly toward the deep cosmos",
-      "environment": "High-altitude desert observatory beneath the Milky Way",
-      "emotion": "electrifying curiosity and suspense",
-      "framing": "low-angle dramatic wide",
-      "cameraMovement": "slow forward push in",
-      "visualPurpose": "hook_grab",
+      "visualSubject": "Extreme close up macro shot of the everyday object",
+      "action": "Hands examining the subtle engineered feature",
+      "environment": "Everyday real world setting with natural lighting",
+      "emotion": "intense curiosity and intrigue",
+      "framing": "extreme close-up macro",
+      "cameraMovement": "slow dynamic push in",
+      "visualPurpose": "establish",
       "visualPriority": "critical",
       "preferredVisualType": "stock",
-      "searchQueries": ["radio telescope starry night", "astronomical observatory night sky", "deep space antenna"]
+      "searchQueries": ["airplane window hole close up", "airplane cabin window macro"]
     }
   ]
 }`;
   }
 }
+

@@ -15,13 +15,29 @@ export interface TopicsData {
   topics: TopicItem[];
 }
 
+export interface TopicHistoryRecord {
+  topic: string;
+  category?: string;
+  hookAngle?: string;
+  usedAt: string;
+  keywords: string[];
+}
+
 export interface TopicRotationState {
   lastSelectedTopicId?: string;
   lastSelectedTopic?: string;
   recentlyUsedIds: string[];
   recentlyUsedTopics: string[];
+  history?: TopicHistoryRecord[];
   currentIndex: number;
   updatedAt: string;
+}
+
+export interface TopicValidationResult {
+  isValid: boolean;
+  score: number; // 0 - 100
+  reasons: string[];
+  rejectedReason?: string;
 }
 
 export interface ResolvedTopic {
@@ -63,10 +79,191 @@ export class TopicManager {
   }
 
   /**
+   * Validates a topic candidate against the 8 core Everyday Curiosity quality criteria:
+   * 1. Curiosity strength (high curiosity gap about an ordinary object/experience)
+   * 2. Evergreen value (timeless, relevant for years)
+   * 3. Factual verifiability (grounded in real physics, engineering, or design)
+   * 4. Visual potential (concrete objects, places, environments, processes, people)
+   * 5. Story potential (structured as miniature investigation)
+   * 6. Usefulness / practical payoff
+   * 7. Originality of angle (avoids cliche tropes and duplicate angles)
+   * 8. Sufficient material for ~8-12 meaningful visual beats
+   */
+  validateTopicProposal(
+    proposalOrTopic: string | { topic: string; hookAngle?: string; category?: string },
+    stateOrHook?: string | TopicRotationState,
+    categoryArg?: string,
+    historyArg: TopicHistoryRecord[] = []
+  ): TopicValidationResult & { valid?: boolean } {
+    let topicStr = '';
+    let hookAngle: string | undefined;
+    let category: string | undefined;
+    let history: (TopicHistoryRecord | { topic: string })[] = historyArg || [];
+    let recentList: string[] = [];
+
+    if (typeof proposalOrTopic === 'object' && proposalOrTopic !== null) {
+      topicStr = proposalOrTopic.topic || '';
+      hookAngle = proposalOrTopic.hookAngle;
+      category = proposalOrTopic.category;
+      if (typeof stateOrHook === 'object' && stateOrHook !== null) {
+        history = (stateOrHook.history as any) || [];
+        recentList = (stateOrHook.recentlyUsedTopics as string[]) || [];
+      }
+    } else {
+      topicStr = proposalOrTopic || '';
+      if (typeof stateOrHook === 'string') {
+        hookAngle = stateOrHook;
+      } else if (typeof stateOrHook === 'object' && stateOrHook !== null) {
+        history = (stateOrHook.history as any) || [];
+        recentList = (stateOrHook.recentlyUsedTopics as string[]) || [];
+      }
+      category = categoryArg;
+    }
+
+    const cleanTopic = (topicStr || '').trim();
+    const reasons: string[] = [];
+
+    // Length check
+    if (cleanTopic.length < 8) {
+      return {
+        isValid: false,
+        valid: false,
+        score: 0,
+        reasons: ['Topic title is too short.'],
+        rejectedReason: 'Title too short (< 8 chars)',
+      };
+    }
+    if (cleanTopic.length > 130) {
+      return {
+        isValid: false,
+        valid: false,
+        score: 0,
+        reasons: ['Topic title is excessively long.'],
+        rejectedReason: 'Title too long (> 130 chars)',
+      };
+    }
+
+    const lowerTopic = cleanTopic.toLowerCase();
+
+    // Reject non-everyday or banned abstract tropes (e.g. abstract philosophy, pure sensationalism, neurons)
+    const bannedTropes = [
+      'you won\'t believe',
+      'shocking secret',
+      'dark psychology',
+      'manipulation trick',
+      'quantum consciousness',
+      'spiritual energy',
+      'multiverse simulation',
+      'secret alien',
+      'infinite void',
+      'astrology sign',
+      'secrets they hide',
+      'secrets they don\'t want you to know',
+    ];
+    for (const trope of bannedTropes) {
+      if (lowerTopic.includes(trope)) {
+        return {
+          isValid: false,
+          valid: false,
+          score: 10,
+          reasons: [`Topic contains sensationalist or non-factual trope: "${trope}"`],
+          rejectedReason: `Banned sensationalist trope ("${trope}")`,
+        };
+      }
+    }
+
+    // Check against recently used topics list
+    if (recentList.some((t) => t.toLowerCase() === lowerTopic)) {
+      return {
+        isValid: false,
+        valid: false,
+        score: 0,
+        reasons: [`Topic matches recently used topic: "${cleanTopic}"`],
+        rejectedReason: 'Recently used topic',
+      };
+    }
+
+    // Check Originality against history (prevent same angle or substantial duplicate)
+    const topicTokens = this.extractSignificantTokens(lowerTopic);
+    for (const record of history) {
+      const histTopic = typeof record === 'string' ? record : record.topic;
+      const histLower = (histTopic || '').toLowerCase();
+      if (histLower === lowerTopic) {
+        return {
+          isValid: false,
+          valid: false,
+          score: 0,
+          reasons: [`Topic matches exact historical topic: "${histTopic}"`],
+          rejectedReason: 'Exact duplicate topic in history',
+        };
+      }
+      const histTokens = this.extractSignificantTokens(histLower);
+      const overlap = topicTokens.filter((t) => histTokens.includes(t));
+      const overlapRatio = overlap.length / Math.max(1, Math.min(topicTokens.length, histTokens.length));
+      if (overlapRatio >= 0.75 && overlap.length >= 3) {
+        return {
+          isValid: false,
+          valid: false,
+          score: 25,
+          reasons: [`Topic angle overlaps heavily with historical topic: "${histTopic}"`],
+          rejectedReason: `High semantic overlap with recent topic "${histTopic}"`,
+        };
+      }
+    }
+
+    // Check Question / Curiosity form
+    const questionMarkers = ['why', 'how', 'what', 'the reason', 'hidden reason', 'the secret', 'inside'];
+    const hasCuriosityForm = questionMarkers.some((m) => lowerTopic.includes(m));
+    if (!hasCuriosityForm && !lowerTopic.startsWith('the ')) {
+      reasons.push('Title does not use an immediate curiosity question framing');
+    }
+
+    // Positive scoring for Everyday Curiosity signals
+    let score = 70;
+    if (hasCuriosityForm) score += 10;
+    if (hookAngle && hookAngle.length >= 20) score += 10;
+    if (
+      category &&
+      [
+        'Everyday Design',
+        'Hidden Features',
+        'Everyday Systems',
+        'Consumer Science',
+        'Urban Engineering',
+        'Everyday Physics',
+        'Everyday Design & Engineering',
+      ].includes(category)
+    ) {
+      score += 10;
+    }
+
+    const isValid = score >= 60;
+    return {
+      isValid,
+      valid: isValid,
+      score: Math.min(100, score),
+      reasons,
+    };
+  }
+
+  private extractSignificantTokens(text: string): string[] {
+    const stopwords = new Set([
+      'the', 'why', 'how', 'what', 'are', 'is', 'in', 'on', 'at', 'to', 'for', 'of', 'and', 'a', 'an',
+      'this', 'that', 'with', 'from', 'they', 'you', 'your', 'have', 'has', 'do', 'does', 'them', 'all',
+      'actually', 'really', 'always', 'secret', 'hidden',
+    ]);
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !stopwords.has(w));
+  }
+
+  /**
    * Resolves the video topic according to manual input, AI generation, or deterministic rotation.
    * Mode 1: EXPLICIT if manual topic is provided.
-   * Mode 2: GENERATED via Gemini (single targeted prompt with recent avoidance).
-   * Mode 3: ROTATION from topics pool if Gemini is unavailable or fails.
+   * Mode 2: GENERATED via Gemini (single targeted prompt with recent avoidance & validation).
+   * Mode 3: ROTATION from curated Everyday Curiosity pool if Gemini is unavailable or fails.
    */
   async resolveTopic(rawTopicInput?: string): Promise<ResolvedTopic> {
     const trimmedInput = (rawTopicInput || '').trim();
@@ -119,41 +316,44 @@ export class TopicManager {
   }
 
   /**
-   * Generates a fresh, high-retention short-form video topic using Gemini.
+   * Generates a fresh, high-retention Everyday Curiosity video topic using Gemini.
    * Ensures minimal API usage (single request) and passes recent topics to prevent repetition.
    */
   private async generateTopicWithGemini(): Promise<ResolvedTopic | null> {
     if (!this.geminiClient) return null;
 
     const state = this.loadState();
-    const recentTopics = (state.recentlyUsedTopics || []).slice(-12);
+    const recentTopics = (state.recentlyUsedTopics || []).slice(-15);
     const recentAvoidText =
       recentTopics.length > 0
         ? `\nPREVIOUSLY USED TOPICS TO AVOID (DO NOT REPEAT OR CLOSELY PARAPHRASE):\n${recentTopics.map((t) => `- "${t}"`).join('\n')}`
         : '';
 
     const prompt = `You are an elite video creator producing viral, high-retention 30-60 second curiosity-driven educational entertainment shorts (YouTube Shorts / TikTok / Reels) for an audience of 18–34 year olds in the US, UK, Canada, and Australia.
-Niche: Psychology + Human Behavior + Strange Human Mysteries.
+Niche: Everyday Curiosity — the hidden reasons behind ordinary things.
+Core promise: Reveal the surprising, useful, and genuinely interesting reasons behind things people see, use, or experience every day.
+Viewer sentiment: "I've seen this my whole life, but I never knew why."
+
 Generate ONE fresh, compelling video topic.
 
 CRITERIA:
-1. High viral curiosity gap: A mind-bending psychological quirk, counter-intuitive human behavior, shocking brain phenomenon, or everyday mystery that hooks viewers within 2 seconds.
-2. Domain:
-   - Strange things the human brain does (e.g. deja vu, doorway effect, intrusive thoughts, phantom vibrations, optical illusions, sleep paralysis)
-   - Social behavior and psychology (e.g. bystander effect, conformity, awkwardness, charisma, mimicry, crowd dynamics)
-   - Memory, perception, emotions, habits, attraction, fear, decision-making
-   - Unexplained or surprising human behaviors and everyday psychological phenomena
-   - Technology-related human behavior when relevant (e.g. doomscrolling psychology, parasocial bonds, algorithmic addiction)
-3. Visual Storytelling Potential: Prioritize topics with strong visual b-roll potential using real people, expressive faces, crowds, workplaces, homes, phones, cities, relationships, and everyday human environments.
-4. Title: 6 to 12 words, title case, clear and arresting (e.g. "Why You Instantly Forget Why You Entered a Room", "The Creepy Psychology Behind the Uncanny Valley", "Why Your Brain Hallucinates Phone Vibrations", "Why Losing Money Hurts Twice as Much as Winning").
-5. Substance: Must have clear factual depth grounded in psychological research and an intriguing revelation suitable for a 30-60s script.
+1. Core Question Framing:
+   - "Why is this designed this way?" (e.g. Why do pen caps have a hole, why do milk jugs have dimples, why do jeans have copper rivets)
+   - "Why does this happen?" (e.g. Why store receipts fade to white, why crackers have holes, why escalators move faster than steps)
+   - "What is actually happening here?" (e.g. How barcode scanners read the white spaces, why touchscreens need bare skin)
+   - "Why does this ordinary thing have this strange feature?" (e.g. Why airplane windows have tiny holes, why soda can tabs have an oval hole)
+   - "How does this everyday system really work?" (e.g. How traffic lights know you pulled up, why manhole covers are round)
+2. Evergreen & Factual: Must be 100% grounded in real engineering, physics, consumer science, or design history. Never manufacture mystery or use unsupported sensational claims.
+3. Concrete Visual Storytelling Potential: Must feature everyday physical objects, tools, mechanisms, hands, homes, streets, stores, or vehicles with rich stock footage and procedural animation potential.
+4. Title: 6 to 12 words, Title Case, clear and arresting (e.g. "Why Airplane Windows Have a Tiny Hole at the Bottom", "Why Escalator Handrails Move Faster Than the Steps", "Why Manhole Covers Are Almost Always Round").
+5. Story & Value: Must have sufficient substance for a mini-investigation with an entertaining explanation and lasting practical payoff.
 ${recentAvoidText}
 
 Respond ONLY with valid, raw JSON matching this schema:
 {
   "topic": "The exact video topic title",
-  "category": "Psychology" | "Human Behavior" | "Brain Mysteries" | "Social Dynamics" | "Digital Psychology",
-  "hookAngle": "One-sentence provocative hook question or observation"
+  "category": "Everyday Design" | "Hidden Features" | "Everyday Systems" | "Consumer Science" | "Urban Engineering" | "Everyday Physics",
+  "hookAngle": "One-sentence provocative hook question or observation establishing the everyday subject"
 }`;
 
     const parsed = await this.geminiClient.generateJson<{
@@ -167,26 +367,42 @@ Respond ONLY with valid, raw JSON matching this schema:
     }
 
     const cleanTopic = parsed.topic.trim().replace(/^["']|["']$/g, '');
-    if (cleanTopic.length < 8 || cleanTopic.length > 120) {
-      return null;
-    }
+    const validation = this.validateTopicProposal(
+      {
+        topic: cleanTopic,
+        hookAngle: parsed.hookAngle,
+        category: parsed.category,
+      },
+      state
+    );
 
-    // Verify it is not an immediate duplicate of a recent topic
-    const recentSet = new Set((state.recentlyUsedTopics || []).map((t) => t.toLowerCase().trim()));
-    if (recentSet.has(cleanTopic.toLowerCase())) {
+    if (!validation.isValid) {
       if (this.logger) {
-        this.logger.warn(`Gemini proposed duplicate topic "${cleanTopic}". Falling back to pool.`);
+        this.logger.warn(`Gemini proposed topic "${cleanTopic}" rejected by validator: ${validation.rejectedReason || 'Score too low'}. Falling back to pool.`);
       }
       return null;
     }
 
-    // Persist to state
+    // Persist to state and history
+    const historyRecord: TopicHistoryRecord = {
+      topic: cleanTopic,
+      category: parsed.category,
+      hookAngle: parsed.hookAngle,
+      usedAt: new Date().toISOString(),
+      keywords: this.extractSignificantTokens(cleanTopic),
+    };
+
     state.lastSelectedTopic = cleanTopic;
     state.lastSelectedTopicId = undefined;
     state.recentlyUsedTopics = state.recentlyUsedTopics || [];
     state.recentlyUsedTopics.push(cleanTopic);
-    if (state.recentlyUsedTopics.length > 25) {
-      state.recentlyUsedTopics = state.recentlyUsedTopics.slice(-25);
+    if (state.recentlyUsedTopics.length > 30) {
+      state.recentlyUsedTopics = state.recentlyUsedTopics.slice(-30);
+    }
+    state.history = state.history || [];
+    state.history.push(historyRecord);
+    if (state.history.length > 50) {
+      state.history = state.history.slice(-50);
     }
     state.updatedAt = new Date().toISOString();
     this.saveState(state);
@@ -196,7 +412,7 @@ Respond ONLY with valid, raw JSON matching this schema:
     return {
       topic: cleanTopic,
       mode: 'GENERATED',
-      category: parsed.category || 'Psychology',
+      category: parsed.category || 'Everyday Design',
       hookAngle: parsed.hookAngle,
     };
   }
@@ -207,7 +423,7 @@ Respond ONLY with valid, raw JSON matching this schema:
   resolveFromPool(providedState?: TopicRotationState): ResolvedTopic {
     const pool = this.loadTopics();
     if (!pool || pool.length === 0) {
-      const fallback = 'Why You Instantly Forget Why You Entered a Room';
+      const fallback = 'Why Airplane Windows Have a Tiny Hole at the Bottom';
       this.logTopicSelection('ROTATION', fallback);
       return {
         topic: fallback,
@@ -257,8 +473,8 @@ Respond ONLY with valid, raw JSON matching this schema:
       if (state.recentlyUsedIds.length > pool.length) {
         state.recentlyUsedIds = state.recentlyUsedIds.slice(-Math.floor(pool.length / 2));
       }
-      if (state.recentlyUsedTopics.length > 25) {
-        state.recentlyUsedTopics = state.recentlyUsedTopics.slice(-25);
+      if (state.recentlyUsedTopics.length > 30) {
+        state.recentlyUsedTopics = state.recentlyUsedTopics.slice(-30);
       }
     }
 
@@ -302,9 +518,18 @@ Respond ONLY with valid, raw JSON matching this schema:
     state.recentlyUsedTopics = state.recentlyUsedTopics || [];
     if (!state.recentlyUsedTopics.includes(topic)) {
       state.recentlyUsedTopics.push(topic);
-      if (state.recentlyUsedTopics.length > 25) {
-        state.recentlyUsedTopics = state.recentlyUsedTopics.slice(-25);
+      if (state.recentlyUsedTopics.length > 30) {
+        state.recentlyUsedTopics = state.recentlyUsedTopics.slice(-30);
       }
+    }
+    state.history = state.history || [];
+    state.history.push({
+      topic,
+      usedAt: new Date().toISOString(),
+      keywords: this.extractSignificantTokens(topic),
+    });
+    if (state.history.length > 50) {
+      state.history = state.history.slice(-50);
     }
     state.updatedAt = new Date().toISOString();
     this.saveState(state);
@@ -327,43 +552,43 @@ Respond ONLY with valid, raw JSON matching this schema:
       }
     }
 
-    // Curated fallback pool of engaging vertical video topics
+    // Curated fallback pool of engaging Everyday Curiosity vertical video topics
     return [
       {
-        id: 'science_frb',
-        category: 'Science',
-        topic: 'The Mystery of Deep Space Fast Radio Bursts',
-        hookAngle: 'Mysterious radio pulses from deep space repeating with mathematical precision',
+        id: 'design_airplane_window_hole',
+        category: 'Everyday Design',
+        topic: 'Why Airplane Windows Have a Tiny Hole at the Bottom',
+        hookAngle: 'That tiny pinhole in your window is secretly balancing cabin air pressure at 35,000 feet.',
       },
       {
-        id: 'science_black_holes',
-        category: 'Science',
-        topic: 'What Happens Inside a Black Hole',
-        hookAngle: 'Where space and time swap places and physics breaks completely',
+        id: 'design_pen_cap_hole',
+        category: 'Hidden Features',
+        topic: 'Why Ballpoint Pen Caps Have a Hole at the Tip',
+        hookAngle: 'That small hole in the top of your pen cap was engineered as a lifesaving airway.',
       },
       {
-        id: 'science_neutron_stars',
-        category: 'Science',
-        topic: 'Why Neutron Stars Are So Strange',
-        hookAngle: 'A single teaspoon of this star weighs as much as Mount Everest',
+        id: 'eng_escalator_handrail_speed',
+        category: 'Everyday Systems',
+        topic: 'Why Escalator Handrails Move Slightly Faster Than the Steps',
+        hookAngle: 'If you feel your arm creeping forward on an escalator, it is an intentional mechanical safeguard.',
       },
       {
-        id: 'tech_ai_learning',
-        category: 'Technology',
-        topic: 'How Artificial Intelligence Actually Learns',
-        hookAngle: 'How silicon chips learn to recognize faces and speak like humans',
+        id: 'urban_manhole_covers_round',
+        category: 'Urban Engineering',
+        topic: 'Why Manhole Covers Are Almost Always Round',
+        hookAngle: 'A round manhole cover can never accidentally fall into its own hole through geometry.',
       },
       {
-        id: 'nature_octopus_camouflage',
-        category: 'Nature',
-        topic: 'How Octopuses Instantly Change Color',
-        hookAngle: 'Creatures with three hearts that turn invisible in two hundred milliseconds',
+        id: 'food_cracker_holes',
+        category: 'Consumer Science',
+        topic: 'Why Crackers and Biscuits Have Tiny Holes in Them',
+        hookAngle: 'Without those stamped holes, your favorite crackers would explode into soggy pillows in the oven.',
       },
       {
-        id: 'nature_deep_sea_vents',
-        category: 'Nature',
-        topic: 'The Alien Creatures of Deep Sea Hydrothermal Vents',
-        hookAngle: 'Monsters living in boiling toxic water with zero sunlight',
+        id: 'physics_microwave_metal_mesh',
+        category: 'Everyday Physics',
+        topic: 'Why Microwave Doors Have a Black Metal Mesh Screen',
+        hookAngle: 'Light waves pass right through those tiny holes, but 12-centimeter microwaves are physically trapped inside.',
       },
     ];
   }
@@ -380,6 +605,7 @@ Respond ONLY with valid, raw JSON matching this schema:
           recentlyUsedTopics: Array.isArray(parsed.recentlyUsedTopics)
             ? parsed.recentlyUsedTopics
             : [],
+          history: Array.isArray(parsed.history) ? parsed.history : [],
           currentIndex: typeof parsed.currentIndex === 'number' ? parsed.currentIndex : 0,
           updatedAt: parsed.updatedAt || new Date().toISOString(),
         };
@@ -391,6 +617,7 @@ Respond ONLY with valid, raw JSON matching this schema:
     return {
       recentlyUsedIds: [],
       recentlyUsedTopics: [],
+      history: [],
       currentIndex: 0,
       updatedAt: new Date().toISOString(),
     };
@@ -429,3 +656,4 @@ Respond ONLY with valid, raw JSON matching this schema:
     }
   }
 }
+

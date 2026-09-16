@@ -1,100 +1,124 @@
 {
   "topics": [
     {
-      "id": "science_frb",
-      "category": "Science",
-      "topic": "The Mystery of Deep Space Fast Radio Bursts",
-      "hookAngle": "Mysterious radio signals from deep space repeating with mathematical precision"
+      "id": "design_airplane_window_hole",
+      "category": "Everyday Design",
+      "topic": "Why Airplane Windows Have a Tiny Hole at the Bottom",
+      "hookAngle": "That tiny pinhole in your window is secretly the only thing balancing cabin air pressure at 35,000 feet."
     },
     {
-      "id": "science_black_holes",
-      "category": "Science",
-      "topic": "What Happens Inside a Black Hole",
-      "hookAngle": "Where space and time swap places and physics breaks down completely"
+      "id": "design_pen_cap_hole",
+      "category": "Hidden Features",
+      "topic": "Why Ballpoint Pen Caps Have a Hole at the Tip",
+      "hookAngle": "That small hole in the top of your pen cap isn't for drying ink—it was engineered as a lifesaving airway."
     },
     {
-      "id": "science_neutron_stars",
-      "category": "Science",
-      "topic": "Why Neutron Stars Are So Strange",
-      "hookAngle": "A single teaspoon of this stellar remnant weighs as much as Mount Everest"
+      "id": "eng_escalator_handrail_speed",
+      "category": "Everyday Systems",
+      "topic": "Why Escalator Handrails Move Slightly Faster Than the Steps",
+      "hookAngle": "If you feel your arm creeping forward on an escalator, it's not in your head—it's an intentional mechanical safeguard."
     },
     {
-      "id": "science_jwst",
-      "category": "Science",
-      "topic": "How the James Webb Telescope Sees Distant Galaxies",
-      "hookAngle": "A golden mirror orbiting a million miles from Earth looking backward in time"
+      "id": "urban_manhole_covers_round",
+      "category": "Urban Engineering",
+      "topic": "Why Manhole Covers Are Almost Always Round",
+      "hookAngle": "There is a genius geometric reason why a round manhole cover can never accidentally fall into its own hole."
     },
     {
-      "id": "science_dark_matter",
-      "category": "Science",
-      "topic": "What We Know About Dark Matter",
-      "hookAngle": "85 percent of the universe's mass is completely invisible to our telescopes"
+      "id": "food_cracker_holes",
+      "category": "Consumer Science",
+      "topic": "Why Crackers and Biscuits Have Tiny Holes in Them",
+      "hookAngle": "Those stamped holes aren't decorative—without them, your favorite crackers would explode into soggy pillows in the oven."
     },
     {
-      "id": "tech_ai_learning",
-      "category": "Technology",
-      "topic": "How Artificial Intelligence Actually Learns",
-      "hookAngle": "Billions of synthetic neurons tuning math equations to generate human speech"
+      "id": "physics_microwave_metal_mesh",
+      "category": "Everyday Physics",
+      "topic": "Why Microwave Doors Have a Black Metal Mesh Screen",
+      "hookAngle": "Light waves pass right through those tiny holes, but 12-centimeter microwaves are physically trapped inside."
     },
     {
-      "id": "tech_microchips",
-      "category": "Technology",
-      "topic": "Why Computer Chips Keep Getting Smaller",
-      "hookAngle": "Etching billions of transistors onto silicon using extreme ultraviolet laser beams"
+      "id": "systems_traffic_light_sensors",
+      "category": "Everyday Systems",
+      "topic": "How Traffic Lights Know You're Waiting at the Intersection",
+      "hookAngle": "Those rectangular cuts in the asphalt aren't weight scales—they're giant magnetic metal detectors sensing your engine."
     },
     {
-      "id": "tech_gps",
-      "category": "Technology",
-      "topic": "How GPS Satellites Know Where You Are",
-      "hookAngle": "Atomic clocks ticking in orbit that must adjust for Einstein's relativity every day"
+      "id": "design_soda_can_tab_hole",
+      "category": "Everyday Design",
+      "topic": "Why Soda Can Tabs Have That Oval Hole in the Center",
+      "hookAngle": "Spin the tab 180 degrees over the opening, and you unlock a built-in straw holder engineered into every can."
     },
     {
-      "id": "tech_quantum_computing",
-      "category": "Technology",
-      "topic": "What Quantum Computers Are Trying to Solve",
-      "hookAngle": "Subatomic qubits existing in multiple parallel states to solve centuries-old problems"
+      "id": "consumer_milk_jug_dimples",
+      "category": "Consumer Science",
+      "topic": "Why Plastic Milk Jugs Have a Deep Round Dimple on the Side",
+      "hookAngle": "If you drop a full gallon of milk, that circular indentation pops outward to absorb the hydraulic shock wave."
     },
     {
-      "id": "history_atlantis",
-      "category": "History",
-      "topic": "The Mystery Behind the Lost City of Atlantis",
-      "hookAngle": "Did Plato describe a philosophical allegory or a cataclysmic real-world tsunami?"
+      "id": "design_wine_bottle_punt",
+      "category": "Everyday Design",
+      "topic": "Why Wine Bottles Have a Deep Indentation on the Bottom",
+      "hookAngle": "The mysterious cone underneath wine bottles isn't for gripping—it's an ancient structural dome that withstands cork pressure."
     },
     {
-      "id": "history_roman_aqueducts",
-      "category": "History",
-      "topic": "How the Roman Empire Built Unstoppable Aqueducts",
-      "hookAngle": "Sloping channels dropping mere inches per mile to carry millions of gallons of water"
+      "id": "consumer_receipts_fade_thermal",
+      "category": "Consumer Science",
+      "topic": "Why Store Receipts Fade to Blank Paper Over Time",
+      "hookAngle": "Receipt printers don't use ink at all—heat activates a transparent chemical dye that slowly reverses over months."
     },
     {
-      "id": "history_transcontinental_railroad",
-      "category": "History",
-      "topic": "The Story of the First Transcontinental Railroad",
-      "hookAngle": "Blasting solid granite through blizzard winters to connect two coasts with iron"
+      "id": "urban_highway_rumble_strips",
+      "category": "Urban Engineering",
+      "topic": "Why Highway Edges Have Grooved Rumble Strips",
+      "hookAngle": "Those carved highway grooves turn your tires into a loud acoustic vibration chamber to wake drowsy drivers in milliseconds."
     },
     {
-      "id": "nature_octopus_camouflage",
-      "category": "Nature",
-      "topic": "How Octopuses Instantly Change Color",
-      "hookAngle": "Intelligent shape-shifters with three hearts changing textures in 200 milliseconds"
+      "id": "design_jeans_copper_rivets",
+      "category": "Hidden Features",
+      "topic": "Why Blue Jeans Have Tiny Copper Rivets on the Pockets",
+      "hookAngle": "Those tiny metal studs solved a 150-year-old crisis where gold miners kept ripping their pocket seams apart."
     },
     {
-      "id": "nature_lightning_strikes",
-      "category": "Nature",
-      "topic": "Why Lightning Strikes From the Ground Up",
-      "hookAngle": "Invisible upward streamers meeting downward stepped leaders at 200,000 miles per hour"
+      "id": "physics_golf_ball_dimples",
+      "category": "Everyday Physics",
+      "topic": "Why Golf Balls Have Hundreds of Tiny Dimples",
+      "hookAngle": "A perfectly smooth golf ball flies less than half the distance because dimples create a turbulent air boundary that cuts drag."
     },
     {
-      "id": "nature_whale_communication",
-      "category": "Nature",
-      "topic": "How Whales Communicate Across Entire Oceans",
-      "hookAngle": "Deep ocean acoustic channels carrying complex songs across four thousand miles"
+      "id": "eng_elevator_keyhole_mirrors",
+      "category": "Everyday Systems",
+      "topic": "Why Elevator Doors Have a Tiny Keyhole in the Top Corner",
+      "hookAngle": "That tiny hole bypasses all electrical safety interlocks so firefighters can manually release the door latch in seconds."
     },
     {
-      "id": "nature_deep_sea_vents",
-      "category": "Nature",
-      "topic": "The Alien Creatures of Deep Sea Hydrothermal Vents",
-      "hookAngle": "Tubeworms surviving near boiling acidic vents with zero sunlight and toxic sulfur"
+      "id": "food_chip_bag_nitrogen",
+      "category": "Consumer Science",
+      "topic": "Why Potato Chip Bags Are Filled With Extra Gas",
+      "hookAngle": "That extra air in your snack bag isn't a rip-off—it's pure nitrogen gas acting as an airtight protective cushion and preservative."
+    },
+    {
+      "id": "design_shopping_cart_loops",
+      "category": "Hidden Features",
+      "topic": "Why Shopping Carts Have Metal Loops Behind the Child Seat",
+      "hookAngle": "Those wire hooks behind the cart seat are designed to hang delicate bread and eggs above heavy canned goods."
+    },
+    {
+      "id": "systems_barcode_scanner_color",
+      "category": "Everyday Systems",
+      "topic": "How Barcode Scanners Actually Read Price Tags",
+      "hookAngle": "The laser scanner doesn't read the black stripes—it measures the white spaces reflecting light back to the optical sensor."
+    },
+    {
+      "id": "physics_touchscreen_capacitance",
+      "category": "Everyday Physics",
+      "topic": "Why Touchscreens Only Work With Bare Fingers",
+      "hookAngle": "Your smartphone screen isn't sensing pressure—it's measuring tiny electrical charges stolen from its electrostatic grid by your skin."
+    },
+    {
+      "id": "urban_escalator_brush_bristles",
+      "category": "Urban Engineering",
+      "topic": "Why Escalators Have Brush Bristles Along the Bottom Edges",
+      "hookAngle": "Those side brushes aren't meant for cleaning your shoes—they're a psychological barrier keeping feet away from the entrapment gap."
     }
   ]
 }

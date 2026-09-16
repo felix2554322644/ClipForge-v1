@@ -82,19 +82,19 @@ export class DeterministicStoryboardEngine {
         narrationStart: 0,
         narrationEnd: totalDuration,
         durationSeconds: totalDuration,
-        narrationClause: input.narrationText || 'Cosmic exploration',
-        visualSubject: 'Deep space cosmic nebula',
-        action: 'Swirling star clusters and interstellar dust',
-        environment: 'Vast cosmos with glowing ultraviolet light',
-        emotion: 'Awe-inspiring cosmic mystery',
-        mood: 'Awe-inspiring cosmic mystery',
-        framing: 'wide establishing',
-        composition: 'wide establishing',
+        narrationClause: input.narrationText || 'Everyday object design',
+        visualSubject: 'Extreme close up of everyday engineered object',
+        action: 'Hands interacting with the hidden feature',
+        environment: 'Modern real-world setting with natural lighting',
+        emotion: 'Intense everyday curiosity',
+        mood: 'Intense everyday curiosity',
+        framing: 'extreme close-up macro',
+        composition: 'extreme close-up macro',
         cameraMovement: 'slow push in',
-        visualPurpose: 'hook_grab',
+        visualPurpose: 'establish',
         visualPriority: 'critical',
         preferredVisualType: 'stock',
-        searchQueries: ['deep space nebula stars', 'galaxy rotating cosmos', 'starry night universe'],
+        searchQueries: ['everyday object close up', 'macro product design', 'hands using product'],
         pacingType: 'establishing',
         suggestedMotionEffect: 'zoom_in',
         suggestedTransition: 'cut',
@@ -183,13 +183,13 @@ export class DeterministicStoryboardEngine {
     if (!text) {
       return [
         {
-          clause: 'Cosmic scene',
+          clause: 'Everyday Curiosity',
           weight: 1,
-          visualSubject: 'Deep space cosmic anomaly',
-          action: 'Pulsing radiation waves',
-          environment: 'Interstellar dark void',
-          emotion: 'curious awe',
-          framing: 'wide panorama',
+          visualSubject: 'Everyday physical object with hidden design feature',
+          action: 'Hands interacting with the engineered mechanism',
+          environment: 'Real-world indoor or outdoor setting',
+          emotion: 'Curiosity and intrigue',
+          framing: 'extreme close-up macro',
           cameraMovement: 'slow push in',
           pacing: 'normal',
         },
@@ -334,58 +334,77 @@ export class DeterministicStoryboardEngine {
   } {
     const lower = clause.toLowerCase();
 
-    let visualSubject = 'Deep space cosmic phenomenon';
-    let action = 'Swirling stellar clouds and high-energy particles';
-    let environment = 'Deep interstellar void';
-    let emotion = 'Awe and cosmic wonder';
-    let framing = 'wide cinematic perspective';
+    let visualSubject = 'Everyday object with subtle engineered design';
+    let action = 'Hands interacting with the physical mechanism';
+    let environment = 'Everyday real-world setting with natural daylight';
+    let emotion = 'Curiosity and discovery';
+    let framing = 'extreme close-up macro';
     let cameraMovement = 'slow forward push in';
     let pacing: 'fast' | 'normal' | 'establishing' = 'normal';
 
-    if (/telescope|observatory|astronomer|radio dish|listen|detect|signal/i.test(lower)) {
-      visualSubject = 'Massive parabolic radio telescope array';
-      action = 'Dishes smoothly tilting under a starry night sky';
-      environment = 'High-altitude desert observatory beneath the Milky Way';
-      emotion = 'Scientific tension and discovery';
-      framing = shotIdx === 0 ? 'wide establishing' : 'low-angle epic shot';
-      cameraMovement = 'slow upward tilt';
-    } else if (/magnetar|neutron star|dead star|pulsar|core/i.test(lower)) {
-      visualSubject = 'Ultra-dense spinning magnetar with hyper-intense magnetic fields';
-      action = 'Glowing plasma arcs erupting across the cracked stellar crust';
-      environment = 'Cosmic deep space surrounded by glowing accretion matter';
-      emotion = 'Overwhelming awe and raw astronomical power';
-      framing = shotIdx === 0 ? 'wide establishing' : 'extreme close-up detail';
-      cameraMovement = shotIdx === 0 ? 'smooth cinematic push in' : 'orbital rotation with rapid micro-zooms';
-      pacing = shotIdx === 0 ? 'establishing' : 'fast';
-    } else if (/magnetic field|shockwave|burst|flash|energy|plasma|radiation|explosion/i.test(lower)) {
-      visualSubject = 'Cataclysmic relativistic shockwave and plasma burst';
-      action = 'Violent expansion of blinding high-energy photons into space';
-      environment = 'Interstellar medium illuminated by gamma radiation';
-      emotion = 'Explosive escalation and breathtaking tension';
-      framing = shotIdx === 0 ? 'wide establishing' : 'wide dynamic angle';
-      cameraMovement = 'rapid punch in with kinetic shake';
-      pacing = 'fast';
-    } else if (/galaxy|nebula|deep space|cosmos|universe|stars/i.test(lower)) {
-      visualSubject = 'Vibrant spiral galaxy and luminescent nebula';
-      action = 'Rotating galactic arms glowing with billions of newborn stars';
-      environment = 'Limitless cosmic expanse with multi-hued gas clouds';
-      emotion = 'Timeless majesty and wonder';
-      framing = shotIdx === 0 ? 'wide establishing' : 'vast aerial panorama';
-      cameraMovement = 'slow drift pan left';
-    } else if (/earth|planet|world|atmosphere|sky/i.test(lower)) {
-      visualSubject = 'Planet Earth observed from low orbit';
-      action = 'Atmospheric terminator line separating daylight and sparkling city lights';
-      environment = 'Orbital space above blue oceans and weather systems';
-      emotion = 'Fragility and profound perspective';
-      framing = shotIdx === 0 ? 'wide establishing' : 'medium orbital overview';
-      cameraMovement = 'steady cinematic tracking';
+    if (/airplane|plane|window|hole|cabin|altitude|pressure/i.test(lower)) {
+      visualSubject = 'Commercial aircraft passenger window bleed hole';
+      action = 'Extreme close-up showing tiny bleed hole balancing pressure';
+      environment = 'Airplane passenger cabin during flight';
+      emotion = 'Fascinating engineering insight';
+      framing = shotIdx === 0 ? 'extreme close-up macro' : 'medium passenger perspective';
+      cameraMovement = 'slow push in';
+    } else if (/pen|cap|bic|choking|hole|airway|breathe/i.test(lower)) {
+      visualSubject = 'Ballpoint pen cap ventilation hole';
+      action = 'Demonstrating the engineered safety airway in the pen cap';
+      environment = 'Modern desk workspace with stationery';
+      emotion = 'Surprising life-saving design realization';
+      framing = shotIdx === 0 ? 'macro extreme close-up' : 'hands holding pen';
+      cameraMovement = 'orbital rotation with macro focus';
+    } else if (/escalator|brush|bristle|shoe|step|gap/i.test(lower)) {
+      visualSubject = 'Escalator safety skirt brushes and moving steps';
+      action = 'Foot nearing the yellow demarcation line and skirt brushes';
+      environment = 'Busy modern subway station or shopping mall';
+      emotion = 'Everyday safety mechanics revelation';
+      framing = shotIdx === 0 ? 'low-angle close-up' : 'moving tracking shot';
+      cameraMovement = 'tracking downward tilt';
+    } else if (/manhole|circle|square|round|drop|hole|street/i.test(lower)) {
+      visualSubject = 'Heavy cast iron round manhole cover on city street';
+      action = 'Worker rotating the circular lid showing it cannot fall through';
+      environment = 'Urban city asphalt street and sidewalk';
+      emotion = 'Geometric brilliance and satisfying logic';
+      framing = shotIdx === 0 ? 'overhead geometric top-down' : 'low-angle ground perspective';
+      cameraMovement = 'slow circular orbital pan';
+    } else if (/microwave|door|mesh|screen|metal|grid|waves/i.test(lower)) {
+      visualSubject = 'Microwave oven door metal Faraday grid mesh';
+      action = 'Extreme macro showing perforated holes smaller than microwaves';
+      environment = 'Modern kitchen counter';
+      emotion = 'Electromagnetic physics in plain sight';
+      framing = shotIdx === 0 ? 'extreme macro perforated grid' : 'kitchen counter perspective';
+      cameraMovement = 'slow cinematic push in';
+    } else if (/traffic|light|sensor|camera|induction|loop|asphalt/i.test(lower)) {
+      visualSubject = 'Wire induction loop sensor cut into asphalt at traffic intersection';
+      action = 'Car tires stopping directly over the rectangular asphalt seam';
+      environment = 'City intersection with traffic signals';
+      emotion = 'Hidden urban infrastructure mystery solved';
+      framing = shotIdx === 0 ? 'low-angle asphalt detail' : 'wide intersection overview';
+      cameraMovement = 'slow forward tracking';
+    } else if (/cracker|snack|hole|docker|baking|steam|flat/i.test(lower)) {
+      visualSubject = 'Freshly baked crackers showing precise docker steam holes';
+      action = 'Close-up of crispy cracker snapping along perforated lines';
+      environment = 'Bakery cooling rack or kitchen table';
+      emotion = 'Culinary food science satisfaction';
+      framing = shotIdx === 0 ? 'extreme close-up macro' : 'top-down product shot';
+      cameraMovement = 'slow macro slide';
+    } else if (/jean|pocket|rivet|copper|denim|stitch|pants/i.test(lower)) {
+      visualSubject = 'Copper rivets reinforcing small fifth pocket on denim jeans';
+      action = 'Fingers sliding into the miniature pocket revealing pocket watch heritage';
+      environment = 'Textile workshop or casual urban setting';
+      emotion = 'Historical design detective reveal';
+      framing = shotIdx === 0 ? 'extreme macro denim texture' : 'side medium shot';
+      cameraMovement = 'smooth dynamic push in';
     }
 
     if (sceneIdx === 0 && shotIdx === 0) {
       framing = 'wide establishing';
       cameraMovement = 'smooth cinematic push in';
       pacing = 'establishing';
-      emotion = 'electrifying curiosity and suspense';
+      emotion = 'electrifying curiosity and discovery';
     }
 
     return {
@@ -405,12 +424,15 @@ export class DeterministicStoryboardEngine {
     beatIdx: number,
     totalBeatsInScene: number
   ): string {
-    if (sceneIdx === 0 && beatIdx === 0) return 'hook_grab';
-    if (sceneIdx === 0) return 'mystery_escalation';
-    if (sceneIdx === totalScenes - 1 && beatIdx === totalBeatsInScene - 1) return 'closing_call_to_action';
-    if (sceneIdx === totalScenes - 1) return 'emotional_payoff';
-    if (sceneIdx === 1) return 'mechanism_explanation';
-    return 'story_escalation';
+    if (sceneIdx === 0 && beatIdx === 0) return 'establish';
+    if (sceneIdx === 0) return 'escalate_curiosity';
+    if (sceneIdx === totalScenes - 1 && beatIdx === totalBeatsInScene - 1) return 'payoff';
+    if (sceneIdx === totalScenes - 1) return 'payoff';
+    if (sceneIdx === 1 && beatIdx === 0) return 'demonstrate';
+    if (sceneIdx === 1) return 'explain';
+    if (sceneIdx === 2 && beatIdx === 0) return 'contrast';
+    if (sceneIdx === 2) return 'reveal';
+    return 'explain';
   }
 
   private determineVisualPriority(sceneIdx: number, totalScenes: number, beatIdx: number): VisualPriority {
@@ -422,8 +444,8 @@ export class DeterministicStoryboardEngine {
 
   private determineVisualType(clause: string): PreferredVisualType {
     const lower = clause.toLowerCase();
-    if (/\d+[%xX]|\btrillion\b|\bbillion\b|\bmillion\b/i.test(lower)) {
-      return 'stock'; // Stock footage with graphic/typography overlay
+    if (/internal|cross-section|airflow|pressure gradient|faraday|electromagnetic|formula|physics diagram/i.test(lower)) {
+      return 'custom';
     }
     return 'stock';
   }
@@ -438,16 +460,22 @@ export class DeterministicStoryboardEngine {
     const queries: string[] = [];
     const lower = beat.clause.toLowerCase();
 
-    if (/telescope|observatory|astronomer|listen|detect/i.test(lower)) {
-      queries.push('radio telescope starry night', 'astronomical observatory night sky', 'space telescope dish');
-    } else if (/magnetar|neutron star|dead star|pulsar/i.test(lower)) {
-      queries.push('spinning neutron star space', 'pulsar celestial energy', 'magnetar cosmic core');
-    } else if (/magnetic field|plasma|flare|shockwave|burst/i.test(lower)) {
-      queries.push('solar flare plasma explosion', 'magnetic field energy lines', 'cosmic burst shockwave');
-    } else if (/galaxy|nebula|cosmos|universe/i.test(lower)) {
-      queries.push('deep space colorful nebula', 'spiral galaxy rotating', 'milky way starry universe');
-    } else if (/earth|planet|orbit/i.test(lower)) {
-      queries.push('planet earth from space', 'earth orbit blue atmosphere');
+    if (/airplane|plane|window|bleed hole/i.test(lower)) {
+      queries.push('airplane window close up', 'airplane passenger window cabin', 'airplane window altitude');
+    } else if (/pen|cap|bic/i.test(lower)) {
+      queries.push('pen cap hole macro', 'ballpoint pen desk close up', 'writing pen stationery');
+    } else if (/escalator|brush|bristle/i.test(lower)) {
+      queries.push('escalator steps close up', 'moving escalator subway', 'modern escalator mall');
+    } else if (/manhole|cover|street/i.test(lower)) {
+      queries.push('manhole cover city street', 'asphalt road street drain', 'urban sidewalk detail');
+    } else if (/microwave|grid|mesh/i.test(lower)) {
+      queries.push('microwave oven kitchen', 'modern kitchen appliance', 'kitchen counter cooking');
+    } else if (/traffic|light|sensor/i.test(lower)) {
+      queries.push('traffic light city intersection', 'cars at red light', 'urban street asphalt');
+    } else if (/cracker|baking|hole/i.test(lower)) {
+      queries.push('crackers snack close up', 'baking snack food', 'crispy crackers macro');
+    } else if (/jean|rivet|denim|pocket/i.test(lower)) {
+      queries.push('denim jeans pocket close up', 'blue jeans texture macro', 'sewing denim clothes');
     }
 
     // Integrate scene keywords
@@ -461,7 +489,7 @@ export class DeterministicStoryboardEngine {
     }
 
     if (queries.length === 0) {
-      queries.push('deep space galaxy stars', 'cosmic nebula universe');
+      queries.push('everyday object close up', 'hands using product', 'macro engineered design');
     }
 
     return queries.slice(0, 4);
