@@ -8,47 +8,43 @@ import { PipelineLogger } from '../src/services/logging/logger';
 
 const logger = new PipelineLogger();
 
-test('RemotionCompositionService: builds structured scene configurations', () => {
+test('RemotionCompositionService: builds structured v2 overlay configurations', () => {
   const service = new RemotionCompositionService(logger);
 
-  const typo = service.buildKineticTypography('Quantum Advantage Verified', 'Advantage', 'Computational breakthrough');
-  assert.strictEqual(typo.type, 'kinetic_typography');
-  assert.strictEqual(typo.headline, 'Quantum Advantage Verified');
-  assert.strictEqual(typo.emphasisWord, 'Advantage');
+  const hook = service.buildHookTypography('What If You Never Slept?', 'The 24-Hour Awakening');
+  assert.strictEqual(hook.type, 'hook_typography');
+  assert.strictEqual(hook.headline, 'What If You Never Slept?');
+  assert.strictEqual(hook.subheadline, 'The 24-Hour Awakening');
 
-  const stat = service.buildStatisticCard('10x', 'Throughput Boost', 'Across distributed runners', 'up');
-  assert.strictEqual(stat.type, 'statistic_card');
-  assert.strictEqual(stat.statValue, '10x');
-  assert.strictEqual(stat.trend, 'up');
+  const twist = service.buildSignatureTwistReveal('THE IMPLICATION');
+  assert.strictEqual(twist.type, 'signature_twist_reveal');
+  assert.strictEqual(twist.label, 'THE IMPLICATION');
 
-  const comp = service.buildComparison('Architecture', 'Legacy', 'Slow polling', 'Modern', 'Event driven');
-  assert.strictEqual(comp.type, 'comparison');
-  assert.strictEqual(comp.leftLabel, 'Legacy');
-  assert.strictEqual(comp.rightLabel, 'Modern');
+  const endCard = service.buildEndCard('Every night shapes tomorrow.', 'ClipForge');
+  assert.strictEqual(endCard.type, 'end_card');
+  assert.strictEqual(endCard.brandName, 'ClipForge');
 
-  const diagram = service.buildDiagramFlow('Data Flow', [
-    { id: '1', label: 'Ingest', sublabel: 'Fast parser' },
-    { id: '2', label: 'Transform', sublabel: 'Zero copy' },
+  const captions = service.buildCaptions([
+    { word: 'What', startSeconds: 0.1, endSeconds: 0.3 },
+    { word: 'if', startSeconds: 0.3, endSeconds: 0.5 },
   ]);
-  assert.strictEqual(diagram.type, 'diagram_flow');
-  assert.strictEqual(diagram.nodes?.length, 2);
+  assert.strictEqual(captions.type, 'remotion_captions');
+  assert.strictEqual(captions.words.length, 2);
 });
 
-test('RemotionSceneRenderer: Renders deterministic kinetic typography to MP4', async () => {
+test('RemotionSceneRenderer: Renders deterministic hook typography overlay to MP4', async () => {
   const renderer = new RemotionSceneRenderer(logger);
-  const outPath = path.resolve(process.cwd(), 'artifacts', 'visuals', `test_remotion_${Date.now()}.mp4`);
+  const outPath = path.resolve(process.cwd(), 'artifacts', 'visuals', `test_overlay_${Date.now()}.mp4`);
 
-  const result = await renderer.renderScene({
-    sceneParams: {
-      type: 'kinetic_typography',
-      headline: 'Deterministic Rendering Engine',
-      emphasisWord: 'Deterministic',
-      subtitle: 'Native Remotion Composition Pipeline',
-    },
-    format: 'short',
+  const result = await renderer.renderOverlay({
+    type: 'hook_typography',
     durationSeconds: 2.0,
     fps: 30,
     outputPath: outPath,
+    props: {
+      headline: 'What If You Never Slept?',
+      subheadline: 'The Ultimate Experiment',
+    },
   });
 
   assert.strictEqual(result.success, true);

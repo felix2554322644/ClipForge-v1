@@ -439,60 +439,11 @@ export class BrollSearcher {
         }
       }
 
-      // 2. Procedural Fallback if no provider candidate was available or downloadable
+      // 2. Strict Zero-Fabrication Mandate: No procedural generation
       if (!bestCandidate) {
-        const theme = initialQueries[0] || 'galaxy space';
-        const procPath = path.join(footageDir, `${shot.id}_procedural.mp4`);
-
-        this.logger.info(
-          `Synthesizing native 1080x1920 vertical procedural footage for shot ${shot.id} (Theme: "${theme}")...`
+        throw new Error(
+          `BrollSearcher FATAL: Zero-Fabrication Mandate violation - No real stock footage found for shot ${shot.id} (Queries: "${initialQueries.join('", "')}"). Fake procedural footage is strictly prohibited.`
         );
-
-        EditingPrimitives.generateProceduralFootage(
-          procPath,
-          Math.max(targetDuration + 1.5, 4.0),
-          theme,
-          CONFIG.TARGET_WIDTH,
-          CONFIG.TARGET_HEIGHT,
-          CONFIG.TARGET_FPS
-        );
-
-        const evaluation = BrollScorer.evaluateCandidate(
-          {
-            id: `proc_${shot.id}`,
-            provider: 'procedural',
-            providerAssetId: shot.id,
-            width: CONFIG.TARGET_WIDTH,
-            height: CONFIG.TARGET_HEIGHT,
-            duration: targetDuration + 1.5,
-          },
-          targetDuration,
-          CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
-          usedAssetTracker.getUsedIdsSet(),
-          theme
-        );
-
-        bestCandidate = {
-          id: `proc_${shot.id}`,
-          url: `procedural://${encodeURIComponent(theme)}`,
-          videoPath: procPath,
-          originalWidth: CONFIG.TARGET_WIDTH,
-          originalHeight: CONFIG.TARGET_HEIGHT,
-          aspectRatio: CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
-          durationSeconds: targetDuration + 1.5,
-          relevanceScore: evaluation.score,
-          source: 'procedural',
-          provider: 'procedural',
-          providerAssetId: shot.id,
-          nativeVertical: true,
-          cropRequired: false,
-          cropAmount: 0,
-          scoreBreakdown: evaluation.breakdown,
-          selectionReason: evaluation.reason,
-          queryUsed: theme,
-        };
-        usedAssetTracker.markSelected(bestCandidate);
-        lastSelectedProvider = 'procedural';
       }
 
       // 3. Reframe if aspect ratio requires minor crop to reach exact 9:16 (e.g. 4:5 to 9:16)
@@ -997,20 +948,9 @@ export class BrollSearcher {
       }
 
       if (!candidate) {
-        candidate = {
-          id: `proc_${decision.shotId}`,
-          provider: 'procedural',
-          providerAssetId: decision.shotId,
-          downloadUrl: 'procedural://deep%20space',
-          durationSeconds: decision.durationSeconds + 2.0,
-          width: CONFIG.TARGET_WIDTH,
-          height: CONFIG.TARGET_HEIGHT,
-          aspectRatio: CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
-          nativeVertical: true,
-          tags: ['deep space'],
-          queryUsed: 'deep space',
-          relevanceScore: 20,
-        };
+        throw new Error(
+          `BrollSearcher FATAL: Zero-Fabrication Mandate violation - No candidate available for shot ${decision.shotId}.`
+        );
       }
 
       // Check if candidate clip was already materialized for this job
@@ -1024,84 +964,58 @@ export class BrollSearcher {
       let finalVideoPath = '';
       let actualDuration = candidate.durationSeconds;
 
-      if (candidate.provider === 'procedural' || candidate.downloadUrl.startsWith('procedural://')) {
-        const theme = candidate.queryUsed || 'space galaxy';
-        const procPath = path.join(footageDir, `${decision.shotId}_procedural.mp4`);
+      const localClipPath = path.join(
+        footageDir,
+        `${decision.shotId}_${candidate.provider}_${candidate.providerAssetId}.mp4`
+      );
 
-        EditingPrimitives.generateProceduralFootage(
-          procPath,
-          Math.max(decision.durationSeconds + 2.0, 6.0),
-          theme,
-          CONFIG.TARGET_WIDTH,
-          CONFIG.TARGET_HEIGHT,
-          CONFIG.TARGET_FPS
-        );
-        finalVideoPath = procPath;
-        actualDuration = Math.max(decision.durationSeconds + 2.0, 6.0);
-      } else {
-        const localClipPath = path.join(
-          footageDir,
-          `${decision.shotId}_${candidate.provider}_${candidate.providerAssetId}.mp4`
-        );
+      const normalizedItem: NormalizedBrollVideo = {
+        id: candidate.id,
+        provider: candidate.provider as BrollProviderName,
+        providerAssetId: candidate.providerAssetId,
+        sourceUrl: candidate.sourceUrl || '',
+        downloadUrl: candidate.downloadUrl,
+        width: candidate.width,
+        height: candidate.height,
+        aspectRatio: candidate.aspectRatio,
+        durationSeconds: candidate.durationSeconds,
+        nativeVertical: candidate.nativeVertical,
+      };
 
-        const normalizedItem: NormalizedBrollVideo = {
-          id: candidate.id,
-          provider: candidate.provider as BrollProviderName,
-          providerAssetId: candidate.providerAssetId,
-          sourceUrl: candidate.sourceUrl || '',
-          downloadUrl: candidate.downloadUrl,
-          width: candidate.width,
-          height: candidate.height,
-          aspectRatio: candidate.aspectRatio,
-          durationSeconds: candidate.durationSeconds,
-          nativeVertical: candidate.nativeVertical,
-        };
+      const downloaded = await this.downloadFootage(normalizedItem, localClipPath, candidate.queryUsed);
 
-        const downloaded = await this.downloadFootage(normalizedItem, localClipPath, candidate.queryUsed);
+      if (downloaded && fs.existsSync(localClipPath)) {
+        finalVideoPath = localClipPath;
 
-        if (downloaded && fs.existsSync(localClipPath)) {
-          finalVideoPath = localClipPath;
-
-          // Apply subject-safe Visual Cohesion and reframing
-          const cohesionOutPath = path.join(footageDir, `${decision.shotId}_cohesive.mp4`);
-          try {
-            visualCohesion.processShotVisuals(
-              localClipPath,
-              cohesionOutPath,
-              decision.motionEffect,
-              decision.cropMode,
-              true,
-              prevDecision?.motionEffect,
-              { targetWidth: CONFIG.TARGET_WIDTH, targetHeight: CONFIG.TARGET_HEIGHT, fps: CONFIG.TARGET_FPS }
-            );
-            if (fs.existsSync(cohesionOutPath) && fs.statSync(cohesionOutPath).size > 0) {
-              finalVideoPath = cohesionOutPath;
-            }
-          } catch (cohesionErr) {
-            this.logger?.warn?.(
-              `VisualCohesion failed for ${decision.shotId} (${(cohesionErr as Error).message}), falling back to standard reframe.`
-            );
-            if (candidate.aspectRatio > 0.65) {
-              const reframedPath = path.join(footageDir, `${decision.shotId}_reframed.mp4`);
-              VideoReframer.reframeToPortrait(localClipPath, reframedPath);
-              finalVideoPath = reframedPath;
-            }
-          }
-        } else {
-          // Fall back to procedural footage if download fails
-          const theme = candidate.queryUsed || 'space galaxy';
-          const procPath = path.join(footageDir, `${decision.shotId}_proc_fallback.mp4`);
-          EditingPrimitives.generateProceduralFootage(
-            procPath,
-            Math.max(decision.durationSeconds + 2.0, 6.0),
-            theme,
-            CONFIG.TARGET_WIDTH,
-            CONFIG.TARGET_HEIGHT,
-            CONFIG.TARGET_FPS
+        // Apply subject-safe Visual Cohesion and reframing
+        const cohesionOutPath = path.join(footageDir, `${decision.shotId}_cohesive.mp4`);
+        try {
+          visualCohesion.processShotVisuals(
+            localClipPath,
+            cohesionOutPath,
+            decision.motionEffect,
+            decision.cropMode,
+            true,
+            prevDecision?.motionEffect,
+            { targetWidth: CONFIG.TARGET_WIDTH, targetHeight: CONFIG.TARGET_HEIGHT, fps: CONFIG.TARGET_FPS }
           );
-          finalVideoPath = procPath;
-          actualDuration = Math.max(decision.durationSeconds + 2.0, 6.0);
+          if (fs.existsSync(cohesionOutPath) && fs.statSync(cohesionOutPath).size > 0) {
+            finalVideoPath = cohesionOutPath;
+          }
+        } catch (cohesionErr) {
+          this.logger?.warn?.(
+            `VisualCohesion failed for ${decision.shotId} (${(cohesionErr as Error).message}), falling back to standard reframe.`
+          );
+          if (candidate.aspectRatio > 0.65) {
+            const reframedPath = path.join(footageDir, `${decision.shotId}_reframed.mp4`);
+            VideoReframer.reframeToPortrait(localClipPath, reframedPath);
+            finalVideoPath = reframedPath;
+          }
         }
+      } else {
+        throw new Error(
+          `BrollSearcher FATAL: Zero-Fabrication Mandate violation - Real stock footage could not be downloaded for candidate ${candidate.id}. The pipeline will not generate fake placeholder visuals.`
+        );
       }
 
       materializedPaths.set(candidate.id, { finalPath: finalVideoPath, duration: actualDuration });

@@ -12,6 +12,7 @@ export type PipelineStage =
   | 'RENDERING'
   | 'VALIDATION'
   | 'FINAL_QC'
+  | 'FILM_CRITIQUE'
   | 'COMPLETED'
   | 'FAILED';
 

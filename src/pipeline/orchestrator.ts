@@ -7,6 +7,7 @@ import { ResearchService } from '../services/research/researcher';
 import { ScriptwriterService } from '../services/scripting/scriptwriter';
 import { PiperNarrationEngine } from '../services/narration/piper';
 import { NarrationPreprocessor } from '../services/narration/textPreprocessor';
+import { ForcedAligner } from '../services/narration/forcedAligner';
 import { CaptionEngine } from '../services/captions/captionEngine';
 import { AIStoryboardService } from '../services/storyboard/storyboardService';
 import { ScenePlanner } from '../services/scenes/planner';
@@ -20,6 +21,8 @@ import { AudioPlanner } from '../services/audio/planner';
 import { FfmpegRenderer } from '../services/rendering/ffmpegRenderer';
 import { FfprobeValidator } from '../services/validation/ffprobeValidator';
 import { FinalQualityControlService } from '../services/qc/finalQc';
+import { FilmEditorCritiqueService } from '../services/qc/filmEditorCritique';
+import { RenderSpecBuilder } from '../services/spec/renderSpecBuilder';
 import { GeminiUsageGovernor, getGlobalGovernor } from '../services/governor/usageGovernor';
 import { PipelineJob } from '../contracts/job';
 import { ARTIFACT_FILES, getArtifactPath } from '../contracts/artifacts';
@@ -44,6 +47,7 @@ export class VideoPipelineOrchestrator {
   private renderer: FfmpegRenderer;
   private validator: FfprobeValidator;
   private qcService: FinalQualityControlService;
+  private filmCritiqueService: FilmEditorCritiqueService;
 
   constructor(
     geminiClient?: GeminiClient,
@@ -86,6 +90,7 @@ export class VideoPipelineOrchestrator {
     this.renderer = new FfmpegRenderer(this.logger);
     this.validator = new FfprobeValidator(this.logger);
     this.qcService = qcService || new FinalQualityControlService(this.logger, this.gemini);
+    this.filmCritiqueService = new FilmEditorCritiqueService(this.logger, this.gemini);
   }
 
   async runJob(
@@ -107,7 +112,6 @@ export class VideoPipelineOrchestrator {
     this.logger.setLogDirectory(jobDir);
     this.logger.info(`Starting video pipeline job: ${jobId} (mode: ${topicMode}) for topic: "${activeTopic}"`);
 
-    // Reset governor tracking for new production run
     this.governor.reset();
 
     const job: PipelineJob = {
@@ -134,7 +138,7 @@ export class VideoPipelineOrchestrator {
       const brief = await this.researcher.conductResearch(activeTopic);
       this.saveArtifact(jobDir, ARTIFACT_FILES.RESEARCH, brief);
 
-      // 2. High-Retention Scriptwriting
+      // 2. High-Retention Scriptwriting (5-Beat Everyday Curiosity structure)
       job.currentStage = 'SCRIPTING';
       job.progressPercent = 30;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
@@ -153,9 +157,16 @@ export class VideoPipelineOrchestrator {
       );
       this.saveArtifact(jobDir, ARTIFACT_FILES.NARRATION_JSON, narrationArtifact);
 
-      // 3b. Generate Synchronized Captions
+      // 3b. Forced Word-Level Alignment
+      const wordTimestamps = ForcedAligner.alignAudio(
+        narrationWavPath,
+        combinedNarrationText,
+        this.logger
+      );
+
+      // 3c. Generate Synchronized Captions
       const captionsAssPath = getArtifactPath(jobDir, 'CAPTIONS_ASS');
-      const { segments: captions, assPath: captionAssFile } = this.captionEngine.generateCaptions(
+      const { segments: captions } = this.captionEngine.generateCaptions(
         combinedNarrationText,
         narrationArtifact.durationSeconds,
         captionsAssPath
@@ -163,7 +174,7 @@ export class VideoPipelineOrchestrator {
       this.saveArtifact(jobDir, ARTIFACT_FILES.CAPTIONS_JSON, captions);
 
       const videoFormat =
-        (options?.profile === 'long' || job.profile === 'long') ? 'long' : 'short';
+        options?.profile === 'long' || job.profile === 'long' ? 'long' : 'short';
 
       // 4. AI Storyboard + Visual Intent Generation
       job.currentStage = 'STORYBOARD';
@@ -179,25 +190,22 @@ export class VideoPipelineOrchestrator {
       });
       this.saveArtifact(jobDir, ARTIFACT_FILES.STORYBOARD, storyboard);
 
-      // 4b. Beat-Level Scene Planning (Backward-compatible artifact)
+      // 4b. Beat-Level Scene Planning
       job.currentStage = 'SCENE_PLANNING';
       job.progressPercent = 55;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
-      // Authoritative duration anchor is the synthesized audio duration
       const scenePlan = this.scenePlanner.planScenes(script, narrationArtifact.durationSeconds);
       scenePlan.captions = captions;
       this.saveArtifact(jobDir, ARTIFACT_FILES.SCENE_PLAN, scenePlan);
 
-      // 5. Multi-Shot B-Roll Candidate Board Assembly (Fed by Storyboard Visual Intent)
+      // 5. Multi-Shot B-Roll Candidate Board Assembly (Zero-Fabrication Mandate)
       job.currentStage = 'BROLL_SELECTION';
       job.progressPercent = 70;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
-      const candidateBoard = await this.brollSearcher.buildCandidateBoard(
-        storyboard
-      );
+      const candidateBoard = await this.brollSearcher.buildCandidateBoard(storyboard);
       this.saveArtifact(jobDir, ARTIFACT_FILES.CANDIDATE_BOARD, candidateBoard);
 
-      // 5b. AI Editorial Director (Gemini decides -> ClipForge executes)
+      // 5b. AI Editorial Director
       job.currentStage = 'EDITORIAL_DECISION';
       job.progressPercent = 75;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
@@ -214,29 +222,13 @@ export class VideoPipelineOrchestrator {
         candidateBoard,
       });
 
-      // Materialize and reframe the selected video assets to 1080x1920 portrait
+      // Materialize and reframe the selected real stock video assets
       await this.brollSearcher.materializeEditorialPlan(
         editorialPlan,
         candidateBoard,
         jobDir
       );
       this.saveArtifact(jobDir, ARTIFACT_FILES.EDITORIAL, editorialPlan);
-
-      // Maintain backward-compatible broll-selection.json artifact
-      const brollSelections = editorialPlan.decisions.map((d) => ({
-        sceneIndex: d.sceneIndex,
-        shotId: d.shotId,
-        shotIndex: d.shotIndex,
-        videoPath: d.videoSourcePath,
-        reframedPath: d.videoSourcePath,
-        inPoint: d.inPoint,
-        outPoint: d.outPoint,
-        duration: d.durationSeconds,
-        motionEffect: d.motionEffect,
-        editorialRole: d.role,
-        captionTreatment: d.captionTreatment,
-      }));
-      this.saveArtifact(jobDir, ARTIFACT_FILES.BROLL_SELECTION, brollSelections);
 
       // Re-burn ASS captions with editorial moment synchronization
       const synchronizedAssPath = getArtifactPath(jobDir, 'CAPTIONS_ASS');
@@ -247,7 +239,7 @@ export class VideoPipelineOrchestrator {
         editorialPlan
       );
 
-      // 6. Professional Audio Mixing (Narration + Music Bed with Dynamic Sidechain Ducking + Editorial SFX Cues)
+      // 6. Professional Audio Mixing (Narration + Ducked Music Bed + Layered Ambience + SFX)
       job.currentStage = 'AUDIO_MIXING';
       job.progressPercent = 80;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
@@ -261,29 +253,37 @@ export class VideoPipelineOrchestrator {
       this.saveArtifact(jobDir, ARTIFACT_FILES.AUDIO_PLAN_JSON, audioPlan);
 
       const masterAudioWavPath = getArtifactPath(jobDir, 'MASTER_AUDIO_WAV');
-      let finalAudioPath = narrationWavPath;
-      try {
-        const audioProbe = this.audioMixer.mixAudio(
-          narrationWavPath,
-          masterAudioWavPath,
-          {
-            targetDurationSeconds: narrationArtifact.durationSeconds,
-            audioPlan,
-            editorialPlan,
-            script,
-            researchBrief: brief,
-          }
-        );
-        finalAudioPath = masterAudioWavPath;
-        this.logger.info(
-          `Master audio mix created at ${masterAudioWavPath} (${audioProbe.durationSeconds.toFixed(2)}s)`
-        );
-      } catch (mixErr) {
-        this.logger.warn(
-          `Audio mixing encountered an unexpected failure: ${(mixErr as Error).message}. Falling back to clean narration audio.`
-        );
-        finalAudioPath = narrationWavPath;
-      }
+      const audioProbe = this.audioMixer.mixAudio(
+        narrationWavPath,
+        masterAudioWavPath,
+        {
+          targetDurationSeconds: narrationArtifact.durationSeconds,
+          audioPlan,
+          editorialPlan,
+          script,
+          researchBrief: brief,
+        }
+      );
+      const finalAudioPath = masterAudioWavPath;
+      this.logger.info(
+        `Master audio mix created at ${masterAudioWavPath} (${audioProbe.durationSeconds.toFixed(2)}s)`
+      );
+
+      // 6b. Build Authoritative RenderSpec (Contract between brain and hands)
+      const renderSpec = RenderSpecBuilder.build({
+        jobId,
+        topic: activeTopic,
+        durationSeconds: narrationArtifact.durationSeconds,
+        script,
+        brief,
+        editorialPlan,
+        audioPlan,
+        masterAudioPath: finalAudioPath,
+        narrationAudioPath: narrationWavPath,
+        wordTimestamps,
+      });
+      this.saveArtifact(jobDir, ARTIFACT_FILES.RENDER_SPEC, renderSpec);
+      this.logger.info(`Authoritative RenderSpec built and saved to ${ARTIFACT_FILES.RENDER_SPEC}`);
 
       // 7. Timeline Building (Multi-shot with burned-in caption directives & editorial decisions)
       job.currentStage = 'TIMELINE_BUILDING';
@@ -298,7 +298,7 @@ export class VideoPipelineOrchestrator {
       job.duration = timeline.totalDurationSeconds;
       this.saveArtifact(jobDir, ARTIFACT_FILES.TIMELINE, timeline);
 
-      // 8. Video Composite Rendering (burns in ASS captions, enforces exact audio duration)
+      // 8. Video Composite Rendering
       job.currentStage = 'RENDERING';
       job.progressPercent = 92;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
@@ -317,9 +317,9 @@ export class VideoPipelineOrchestrator {
         throw new Error(`Quality validation failed: ${validation.errors.join(', ')}`);
       }
 
-      // 10. Final Quality Control (QC Inspection with Gemini Multimodal or deterministic fallback)
+      // 10. Final Quality Control (Dense frame sampling + explicit audio check)
       job.currentStage = 'FINAL_QC';
-      job.progressPercent = 98;
+      job.progressPercent = 97;
       this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
       const qcReport = await this.qcService.evaluateVideo(
         finalVideoPath,
@@ -332,14 +332,24 @@ export class VideoPipelineOrchestrator {
       );
       this.saveArtifact(jobDir, ARTIFACT_FILES.FINAL_QC, qcReport);
 
-      // Gate pipeline completion strictly on Final QC inspection pass
       if (!qcReport.pass) {
         throw new Error(
           `Final Quality Control inspection failed (Score: ${qcReport.overallScore}/100): ${qcReport.summary || 'QC criteria not met'}`
         );
       }
 
-      // 8b. Export single production deliverable (PART 12: final MP4 only)
+      // 11. Second-Pass Film Editor Critique
+      job.currentStage = 'FILM_CRITIQUE';
+      job.progressPercent = 99;
+      this.saveArtifact(jobDir, ARTIFACT_FILES.JOB, job);
+      const filmCritiquePath = getArtifactPath(jobDir, 'FILM_CRITIQUE');
+      const critiqueReport = await this.filmCritiqueService.critiqueVideo(
+        renderSpec,
+        filmCritiquePath
+      );
+      this.saveArtifact(jobDir, ARTIFACT_FILES.FILM_CRITIQUE, critiqueReport);
+
+      // 12. Export single production deliverable (final MP4 only)
       const productionMp4Path = path.join(CONFIG.OUTPUT_DIR, ARTIFACT_FILES.PRODUCTION_MP4);
       fs.copyFileSync(finalVideoPath, productionMp4Path);
       const jobProductionPath = getArtifactPath(jobDir, 'PRODUCTION_MP4');
@@ -389,17 +399,13 @@ export class VideoPipelineOrchestrator {
     fs.writeFileSync(artifactPath, JSON.stringify(data, null, 2), 'utf-8');
   }
 
-  /**
-   * Packages the production deliverable containing ONLY the final rendered MP4.
-   * Eliminates all intermediate json, wav, cut fragments, and downloaded b-roll.
-   */
   exportProductionDeliverable(finalVideoPath: string, destinationDir?: string): string {
     const targetDir = destinationDir || path.join(CONFIG.OUTPUT_DIR, 'dist');
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
-    const targetPath = path.join(targetDir, ARTIFACT_FILES.PRODUCTION_MP4);
-    fs.copyFileSync(finalVideoPath, targetPath);
-    return targetPath;
+    const outputPath = path.join(targetDir, ARTIFACT_FILES.PRODUCTION_MP4);
+    fs.copyFileSync(finalVideoPath, outputPath);
+    return outputPath;
   }
 }

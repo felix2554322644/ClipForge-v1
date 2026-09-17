@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import { CONFIG } from '../src/config/index';
 import { PipelineLogger } from '../src/services/logging/logger';
 import { PiperNarrationEngine } from '../src/services/narration/piper';
@@ -44,11 +45,11 @@ test('E2E Render: End-to-end micro synthesis, composite render, and validation w
   assert.ok(fs.existsSync(captionsAssPath), 'Captions ASS file missing');
   assert.ok(captions.length >= 2, 'Should generate at least 2 caption segments');
 
-  // 3. Generate procedural 1080x1920 video clips with distinct themes
+  // 3. Generate test video clips
   const clip1 = path.join(testDir, 'clip1.mp4');
   const clip2 = path.join(testDir, 'clip2.mp4');
-  EditingPrimitives.generateProceduralFootage(clip1, 4, 'telescope', 1080, 1920, 30);
-  EditingPrimitives.generateProceduralFootage(clip2, 4, 'pulsar', 1080, 1920, 30);
+  execSync(`ffmpeg -y -f lavfi -i "color=c=navy:s=1080x1920:d=4:r=30" -c:v libx264 -pix_fmt yuv420p "${clip1}"`, { stdio: 'pipe' });
+  execSync(`ffmpeg -y -f lavfi -i "color=c=indigo:s=1080x1920:d=4:r=30" -c:v libx264 -pix_fmt yuv420p "${clip2}"`, { stdio: 'pipe' });
 
   const halfDuration = Math.round((audioArtifact.durationSeconds / 2) * 100) / 100;
   const remainderDuration = Math.round((audioArtifact.durationSeconds - halfDuration) * 100) / 100;

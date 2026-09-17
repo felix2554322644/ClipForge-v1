@@ -4,6 +4,7 @@ import path from 'node:path';
 import { CONFIG } from '../../config/index';
 import { EditorialPlan } from '../../types/editorial';
 import { PipelineLogger } from '../logging/logger';
+import { BRAND_BIBLE } from '../../config/brandBible';
 
 export interface VisualCohesionOptions {
   targetWidth?: number;
@@ -11,13 +12,17 @@ export interface VisualCohesionOptions {
   fps?: number;
   enableStabilization?: boolean;
   subjectAware?: boolean;
+  mood?: 'neutral' | 'tense_cool' | 'resolution_warm' | 'dread_dark';
+  enableFilmGrain?: boolean;
 }
 
 export class VisualCohesionService {
   constructor(private logger?: PipelineLogger) {}
 
   /**
-   * Analyzes and reframes/stabilizes video with subject-safe framing and consecutive shot continuity.
+   * Two-pass grading pipeline:
+   * Pass 1: Normalizing grade applied uniformly to harmonize contrast/saturation baseline across diverse stock.
+   * Pass 2: Mood grade keyed to each beat's emotional tag + consistent subtle film grain.
    */
   processShotVisuals(
     inputPath: string,
@@ -41,7 +46,7 @@ export class VisualCohesionService {
     const targetHeight = options.targetHeight || (isVerticalTarget ? CONFIG.TARGET_HEIGHT : 1080);
     const fps = options.fps || CONFIG.TARGET_FPS;
 
-    // Check consecutive shot visual continuity: avoid back-to-back identical motion effects
+    // 1. Motion Continuity Adjustment
     let effectiveMotion = motionEffect;
     if (prevMotionEffect && prevMotionEffect.toLowerCase() === motionEffect.toLowerCase()) {
       if (motionEffect === 'push_in' || motionEffect === 'zoom_in') {
@@ -54,8 +59,7 @@ export class VisualCohesionService {
       this.logger?.info?.(`VisualCohesion: Continuity check adjusted repeating motion '${motionEffect}' to '${effectiveMotion}'`);
     }
 
-    const stabilizationFilter = options.enableStabilization ? 'deshake=rx=16:ry=16:edge=blank,' : '';
-
+    // 2. Pass 1: Normalizing Grade & Smart Reframing
     let reframeFilter = '';
     if (cropMode === 'punch_in') {
       const pW = Math.round((targetWidth * 1.15) / 2) * 2;
@@ -69,14 +73,36 @@ export class VisualCohesionService {
       reframeFilter = `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight}:(in_w-out_w)/2:(in_h-out_h)/2`;
     }
 
-    const filterComplex = `${stabilizationFilter}${reframeFilter},setsar=1,fps=${fps}`;
+    const pass1Normalize = 'eq=contrast=1.06:brightness=0.01:saturation=1.05';
 
-    const cmd = `ffmpeg -y -i "${inputPath}" -vf "${filterComplex}" -c:v libx264 -preset ultrafast -crf 23 -r ${fps} -an "${outputPath}"`;
+    // 3. Pass 2: Mood Grade Keyed to Emotional Intent
+    const mood = options.mood || 'neutral';
+    let pass2Mood = '';
+    switch (mood) {
+      case 'tense_cool':
+      case 'dread_dark':
+        pass2Mood = 'colorbalance=bs=0.08:gs=-0.02:rs=-0.06,eq=contrast=1.14:brightness=-0.02:saturation=0.92';
+        break;
+      case 'resolution_warm':
+        pass2Mood = 'colorbalance=rs=0.07:gs=0.03:bs=-0.05,eq=contrast=1.04:brightness=0.02:saturation=1.08';
+        break;
+      case 'neutral':
+      default:
+        pass2Mood = 'colorbalance=rs=0.02:bs=-0.01,eq=contrast=1.03:saturation=1.02';
+        break;
+    }
+
+    // Consistent subtle organic film grain across everything
+    const filmGrain = options.enableFilmGrain !== false ? ',noise=alls=4:allf=t+u' : '';
+
+    const filterComplex = `${reframeFilter},${pass1Normalize},${pass2Mood}${filmGrain},setsar=1,fps=${fps}`;
+
+    const cmd = `ffmpeg -y -i "${inputPath}" -vf "${filterComplex}" -c:v libx264 -preset ultrafast -crf 22 -r ${fps} -an "${outputPath}"`;
 
     try {
       execSync(cmd, { stdio: 'pipe' });
     } catch (err) {
-      this.logger?.warn?.(`VisualCohesionService: Advanced processing failed (${(err as Error).message}). Falling back to standard reframe.`);
+      this.logger?.warn?.(`VisualCohesionService: Two-pass grading failed (${(err as Error).message}). Falling back to safe reframe.`);
       const fallbackCmd = `ffmpeg -y -i "${inputPath}" -vf "scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},setsar=1,fps=${fps}" -c:v libx264 -preset ultrafast -crf 23 -an "${outputPath}"`;
       execSync(fallbackCmd, { stdio: 'pipe' });
     }
@@ -98,7 +124,6 @@ export class VisualCohesionService {
       const curr = decisions[i];
       if (prev.motionEffect && curr.motionEffect && prev.motionEffect === curr.motionEffect) {
         curr.motionEffect = prev.motionEffect === 'push_in' ? 'pan_left' : 'push_in';
-        curr.editorialReason = `${curr.editorialReason} (Continuity adjusted motion to avoid repetition)`;
       }
     }
     return {

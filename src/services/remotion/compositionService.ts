@@ -3,19 +3,13 @@ import fs from 'node:fs';
 import { RemotionSceneRenderer } from './renderer';
 import { PipelineLogger } from '../logging/logger';
 import {
-  CustomSceneParams,
-  RenderResult,
-  KineticTypographyParams,
-  StatisticCardParams,
-  TimelineParams,
-  ComparisonParams,
-  DiagramFlowParams,
-  BehavioralPsychologyParams,
-  UiSimulationParams,
-  VisualMetaphorParams,
-  BrandedTransitionParams,
+  HookTypographyParams,
+  SignatureTwistRevealParams,
+  EndCardParams,
+  RemotionCaptionsParams,
+  AnyRemotionSceneProps,
 } from './types';
-import { VideoFormat } from '../../types/editorial';
+import { WordTimestamp } from '../../contracts/renderSpec';
 
 export class RemotionCompositionService {
   private renderer: RemotionSceneRenderer;
@@ -30,110 +24,45 @@ export class RemotionCompositionService {
     return this.renderer;
   }
 
-  /**
-   * Pre-warms the Remotion bundle and headless browser in the background.
-   */
   async prewarm(): Promise<void> {
     try {
-      this.logger?.info('[REMOTION SERVICE] Pre-warming composition bundle in background...');
+      this.logger?.info('[REMOTION SERVICE] Pre-warming Remotion bundle...');
       await this.renderer.getServeUrl();
-      this.logger?.info('[REMOTION SERVICE] Bundle ready.');
+      this.logger?.info('[REMOTION SERVICE] Remotion bundle ready.');
     } catch (err) {
-      this.logger?.warn(`[REMOTION SERVICE] Prewarm warning: ${(err as Error).message}`);
+      this.logger?.warn(`[REMOTION SERVICE] Prewarm note: ${(err as Error).message}`);
     }
   }
 
-  /**
-   * Renders a custom visual scene with standard defaults.
-   */
-  async renderScene(
-    sceneParams: CustomSceneParams,
-    durationSeconds = 3.5,
-    format: VideoFormat = 'short',
-    outputPath?: string
-  ): Promise<RenderResult> {
-    return this.renderer.renderScene({
-      sceneParams,
-      durationSeconds,
-      format,
-      outputPath,
-      fps: 30,
-    });
-  }
-
-  /**
-   * Helper to build Kinetic Typography scene params.
-   */
-  buildKineticTypography(
-    headline: string,
-    emphasisWord?: string,
-    subtitle?: string,
-    accentColor = '#F5A623'
-  ): KineticTypographyParams {
+  buildHookTypography(headline: string, subheadline?: string): HookTypographyParams {
     return {
-      type: 'kinetic_typography',
+      type: 'hook_typography',
       headline,
-      emphasisWord: emphasisWord || headline.split(' ')[0],
-      subtitle,
-      accentColor,
+      subheadline,
     };
   }
 
-  /**
-   * Helper to build Statistic Card scene params.
-   */
-  buildStatisticCard(
-    statValue: string,
-    statLabel: string,
-    contextNote?: string,
-    trend: 'up' | 'down' | 'neutral' = 'up',
-    accentColor = '#10B981'
-  ): StatisticCardParams {
+  buildSignatureTwistReveal(label = 'THE IMPLICATION'): SignatureTwistRevealParams {
     return {
-      type: 'statistic_card',
-      statValue,
-      statLabel,
-      contextNote,
-      trend,
-      accentColor,
+      type: 'signature_twist_reveal',
+      label,
     };
   }
 
-  /**
-   * Helper to build Diagram Flow scene params.
-   */
-  buildDiagramFlow(
-    title: string,
-    nodes: Array<{ id: string; label: string; sublabel?: string }>,
-    accentColor = '#38BDF8'
-  ): DiagramFlowParams {
+  buildEndCard(reframeText: string, brandName = 'ClipForge'): EndCardParams {
     return {
-      type: 'diagram_flow',
-      title,
-      nodes,
-      accentColor,
+      type: 'end_card',
+      reframeText,
+      brandName,
     };
   }
 
-  /**
-   * Helper to build Comparison scene params.
-   */
-  buildComparison(
-    title: string,
-    leftLabel: string,
-    leftText: string,
-    rightLabel: string,
-    rightText: string,
-    accentColor = '#38BDF8'
-  ): ComparisonParams {
+  buildCaptions(words: WordTimestamp[], position: 'lower_third' | 'middle_safe' = 'lower_third'): RemotionCaptionsParams {
     return {
-      type: 'comparison',
-      title,
-      leftLabel,
-      leftText,
-      rightLabel,
-      rightText,
-      accentColor,
+      type: 'remotion_captions',
+      words,
+      position,
+      adaptiveScrim: true,
     };
   }
 }

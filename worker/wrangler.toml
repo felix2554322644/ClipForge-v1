@@ -1,0 +1,7 @@
+name = "clipforge-worker"
+main = "src/index.ts"
+compatibility_date = "2024-04-01"
+
+[vars]
+GEMINI_MODEL = "gemini-3.6-flash"
+ALLOW_LANDSCAPE_FALLBACK = "false"

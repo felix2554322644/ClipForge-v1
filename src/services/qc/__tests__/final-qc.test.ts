@@ -33,7 +33,7 @@ test('FinalQualityControlService: deterministic technical fallback on unavailabi
   // Force unavailability
   (qc as any).geminiClient = {
     isAvailable: () => false,
-    executeWithFailover: async () => { throw new Error('Quota exceeded'); },
+    generateJson: async () => { throw new Error('Quota exceeded'); },
   };
 
   const report = await qc.evaluateVideo(dummyVideo, 2.0, { format: 'short' });
@@ -57,9 +57,9 @@ test('FinalQualityControlService: strict structured JSON schema and issue valida
   const qc = new FinalQualityControlService(logger);
   (qc as any).geminiClient = {
     isAvailable: () => true,
-    executeWithFailover: async () => {
+    generateJson: async () => {
       callCount++;
-      return JSON.stringify({
+      return {
         overallScore: 92,
         pass: true,
         issues: [
@@ -72,7 +72,7 @@ test('FinalQualityControlService: strict structured JSON schema and issue valida
           },
         ],
         summary: 'Excellent production quality.',
-      });
+      };
     },
   };
 
@@ -97,8 +97,8 @@ test('FinalQualityControlService: Correctly flags failing video when quality iss
   const qc = new FinalQualityControlService(logger);
   (qc as any).geminiClient = {
     isAvailable: () => true,
-    executeWithFailover: async () => {
-      return JSON.stringify({
+    generateJson: async () => {
+      return {
         overallScore: 45,
         pass: false,
         issues: [
@@ -111,7 +111,7 @@ test('FinalQualityControlService: Correctly flags failing video when quality iss
           },
         ],
         summary: 'Critical visual relevance failure.',
-      });
+      };
     },
   };
 

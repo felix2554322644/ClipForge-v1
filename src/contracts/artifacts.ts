@@ -21,6 +21,8 @@ export const ARTIFACT_FILES = {
   RENDER_REPORT: 'render-report.json',
   VALIDATION: 'validation.json',
   FINAL_QC: 'final-qc.json',
+  FILM_CRITIQUE: 'film-critique.json',
+  RENDER_SPEC: 'render-spec.json',
   PIPELINE_LOG: 'pipeline.log',
 } as const;
 

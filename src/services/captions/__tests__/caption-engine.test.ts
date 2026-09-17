@@ -88,35 +88,21 @@ test('CaptionEngine: deterministic animation and safe positioning defaults', () 
   assert.equal(theme.animationFadeMs, 70, 'Must have fast punchy fade animation duration');
 });
 
-test('RemotionSceneRenderer: 9:16 and 16:9 typography scene integration', async () => {
+test('RemotionSceneRenderer: 9:16 overlay rendering integration', async () => {
   const renderer = new RemotionSceneRenderer(logger);
   
-  const verticalResult = await renderer.renderScene({
-    sceneParams: {
-      type: 'kinetic_typography',
-      headline: 'A TRILLION TIMES',
-      accentColor: '#F5A623',
-    },
-    format: 'short',
+  const verticalResult = await renderer.renderOverlay({
+    type: 'hook_typography',
     durationSeconds: 3.0,
+    props: {
+      headline: 'A TRILLION TIMES',
+      subheadline: 'Neutron Star Collapse',
+      accentColor: '#FF4D2E',
+    },
   });
 
   assert.equal(verticalResult.width, 1080, 'Vertical short format width must be 1080px');
   assert.equal(verticalResult.height, 1920, 'Vertical short format height must be 1920px');
-
-  const landscapeResult = await renderer.renderScene({
-    sceneParams: {
-      type: 'statistic_card',
-      statValue: '1 Billion Tons',
-      statLabel: 'Weight of 1 Teaspoon of Neutron Star',
-      accentColor: '#F5A623',
-    },
-    format: 'long',
-    durationSeconds: 3.0,
-  });
-
-  assert.equal(landscapeResult.width, 1920, 'Landscape long format width must be 1920px');
-  assert.equal(landscapeResult.height, 1080, 'Landscape long format height must be 1080px');
 });
 
 test('AIDirectorValidator: validates caption treatments and handles invalid Director output', () => {

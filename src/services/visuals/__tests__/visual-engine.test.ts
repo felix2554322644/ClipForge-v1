@@ -117,14 +117,16 @@ test('generateSceneHtml produces valid HTML with 9:16 and 16:9 format handling',
   assert.ok(htmlLandscape.includes('1920px'), 'Landscape format should specify 1920px width');
 });
 
-test('RemotionSceneRenderer renders scene deterministically or falls back safely', async () => {
+test('RemotionSceneRenderer renders overlay deterministically or falls back safely', async () => {
   const renderer = new RemotionSceneRenderer(logger);
-  const params = SAMPLE_SCENES.statistic_card;
 
-  const result = await renderer.renderScene({
-    sceneParams: params,
-    format: 'short',
+  const result = await renderer.renderOverlay({
+    type: 'hook_typography',
     durationSeconds: 3.5,
+    props: {
+      headline: 'The Speed of Light',
+      subheadline: 'Cosmic principle',
+    },
   });
 
   assert.strictEqual(result.success, true);
